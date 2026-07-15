@@ -14,16 +14,16 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://finora-money-story.stitchboatimmigratio.chatgpt.site"),
-  title: "Finora — Your money, finally legible",
+  title: "Finora — Statements get messy. Your money story stays clear.",
   description:
-    "Turn any bank or UPI statement into a clean, explainable money story — then take it to Google Sheets or your AI agent.",
+    "Turn any bank, card, or UPI statement into an explainable financial memory for Google Sheets and MCP-compatible AI agents.",
   openGraph: {
-    title: "Finora — Your money, finally legible",
-    description: "Statement in. Money story out. Powered by Gemini 2.5 Flash with Groq fallback.",
+    title: "Finora — Your money story stays clear",
+    description: "Statement in. Money story out. Private, explainable, and agent-ready.",
     type: "website",
-    images: [{ url: "/og.png", width: 1728, height: 909, alt: "Finora turns a bank statement into a clear money story" }],
+    images: [{ url: "/og-v2.png", width: 1728, height: 909, alt: "Finora turns statements into a clear money story" }],
   },
-  twitter: { card: "summary_large_image", images: ["/og.png"] },
+  twitter: { card: "summary_large_image", images: ["/og-v2.png"] },
 };
 
 export default function RootLayout({

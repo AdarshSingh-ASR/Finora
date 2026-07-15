@@ -25,7 +25,7 @@ copy .env.example .env.local
 npm run dev
 ```
 
-Open the printed local URL and sign in with Google. Every account starts with an empty ledger: the dashboard renders only transactions imported by that user. CSV statements can use the deterministic local parser; PDFs, screenshots, and unfamiliar formats require Vertex AI.
+Open the printed local URL to view the Finora landing page, then choose **Analyze a statement** to sign in and enter `/dashboard`. Every account starts with an empty ledger: the dashboard renders only transactions imported by that user. CSV statements can use the deterministic local parser; PDFs, screenshots, and unfamiliar formats require Vertex AI.
 
 Add `GOOGLE_VERTEX_CREDENTIALS` to `.env.local` to enable Gemini 2.5 Flash parsing for PDFs, scanned statements, screenshots, and unfamiliar formats. The value can be one-line Google service-account JSON or its base64 encoding. Set `GROQ_API_KEY` to enable the automatic `openai/gpt-oss-20b` fallback for CSV/text categorization and finance questions.
 
