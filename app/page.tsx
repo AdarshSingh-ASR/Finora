@@ -33,13 +33,17 @@ function FinoraMark() {
 
 export default function LandingPage() {
   const { data: session, isPending } = useSession();
-  const [isScrolled, setIsScrolled] = useState(false);
+  const [navPhase, setNavPhase] = useState<"top" | "compact" | "floating">("top");
 
   useEffect(() => {
-    const updateNav = () => setIsScrolled(window.scrollY > 44);
+    const updateNav = () => {
+      const floatingAt = Math.max(520, window.innerHeight * .72);
+      setNavPhase(window.scrollY <= 44 ? "top" : window.scrollY < floatingAt ? "compact" : "floating");
+    };
     updateNav();
     window.addEventListener("scroll", updateNav, { passive: true });
-    return () => window.removeEventListener("scroll", updateNav);
+    window.addEventListener("resize", updateNav);
+    return () => { window.removeEventListener("scroll", updateNav); window.removeEventListener("resize", updateNav); };
   }, []);
 
   const openFinora = () => {
@@ -49,7 +53,7 @@ export default function LandingPage() {
 
   return <main className="landing-shell" id="top">
     <section className="landing-hero">
-      <nav className={`landing-nav ${isScrolled ? "landing-nav-scrolled" : ""}`} aria-label="Main navigation">
+      <nav className={`landing-nav landing-nav-${navPhase}`} aria-label="Main navigation">
         <a className="landing-brand" href="#top"><FinoraMark/><span>finora</span></a>
         <div className="landing-links"><a href="#how">How it works</a><a href="#intelligence">Intelligence</a><a href="#agents">For agents</a><a href="#privacy">Privacy</a></div>
         <div className="landing-nav-actions"><button className="landing-login" onClick={openFinora} disabled={isPending}>{session?.user ? "Open app" : "Sign in"}</button><button className="landing-nav-cta" onClick={openFinora} disabled={isPending}>Analyze a statement</button></div>
