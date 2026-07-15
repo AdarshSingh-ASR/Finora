@@ -26,10 +26,14 @@ export function sites(): Plugin {
     },
     async closeBundle() {
       const outputDirectory = resolve(root, "dist", ".openai");
+      const generatedDevVars = resolve(root, "dist", "server", ".dev.vars");
       const hostingConfig = resolve(root, ".openai", "hosting.json");
       const drizzleSource = resolve(root, "drizzle");
 
       await rm(outputDirectory, { recursive: true, force: true });
+      // The Cloudflare development adapter mirrors local .env values here.
+      // It is useful for local preview but must never ship in a Sites archive.
+      await rm(generatedDevVars, { force: true });
       await mkdir(outputDirectory, { recursive: true });
 
       if (await exists(hostingConfig)) {
