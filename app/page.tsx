@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
   AlertCircle, ArrowDownLeft, ArrowUpRight, BadgeCheck, Bot, Check, ChevronRight,
-  CircleHelp, Cloud, Code2, Download, FileSpreadsheet, FileText, LayoutDashboard,
+  CircleHelp, Cloud, Download, FileSpreadsheet, FileText, LayoutDashboard,
   LoaderCircle, LockKeyhole, Menu, MoreHorizontal, ReceiptIndianRupee, Search,
   Settings2, Sparkles, UploadCloud, WalletCards, X, Zap,
 } from "lucide-react";
@@ -172,7 +172,6 @@ export default function Home() {
           <button className={view === "agent" ? "active" : ""} onClick={() => { setView("agent"); setMenuOpen(false); }}><Bot size={16}/>Ask Finora <span className="new-dot" /></button>
         </nav>
         <div className="top-actions">
-          <a className="icon-button hide-mobile" href="https://github.com" target="_blank" aria-label="GitHub repository"><Code2 size={18}/></a>
           <button className="sheet-button" onClick={() => setSheetOpen(true)}>{synced ? <Check size={15}/> : <FileSpreadsheet size={16}/>}<span>{synced ? "Synced" : "Sync Sheets"}</span></button>
           <button className="avatar" aria-label="Account menu">AK</button>
           <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Open menu"><Menu size={20}/></button>

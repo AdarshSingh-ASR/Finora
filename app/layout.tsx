@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://finora-life.pages.dev"),
+  metadataBase: new URL("https://finora-money-story.stitchboatimmigratio.chatgpt.site"),
   title: "Finora — Your money, finally legible",
   description:
     "Turn any bank or UPI statement into a clean, explainable money story — then take it to Google Sheets or your AI agent.",
