@@ -15,7 +15,7 @@ The result is not trapped in one UI. It becomes:
 - a Google Sheet with category rollups and charts;
 - an MCP server and reusable Codex skill.
 
-## Run the demo
+## Run locally
 
 Requirements: Node.js 22.13+.
 
@@ -25,7 +25,7 @@ copy .env.example .env.local
 npm run dev
 ```
 
-Open the printed local URL. The app starts with realistic demo data. Upload [`samples/upi-statement.csv`](samples/upi-statement.csv) to exercise the complete no-key path.
+Open the printed local URL and sign in with Google. Every account starts with an empty ledger: the dashboard renders only transactions imported by that user. CSV statements can use the deterministic local parser; PDFs, screenshots, and unfamiliar formats require Vertex AI.
 
 Add `GOOGLE_VERTEX_CREDENTIALS` to `.env.local` to enable Gemini 2.5 Flash parsing for PDFs, scanned statements, screenshots, and unfamiliar formats. The value can be one-line Google service-account JSON or its base64 encoding. Set `GROQ_API_KEY` to enable the automatic `openai/gpt-oss-20b` fallback for CSV/text categorization and finance questions.
 
@@ -140,7 +140,7 @@ The web endpoint uses Responses API file inputs for PDFs/images and Structured O
 
 - No statement content is logged.
 - API keys stay server-side.
-- Raw uploads are processed in-request and are not persisted by the web demo.
+- Raw uploads are processed in-request and are not persisted by the web app.
 - Signed-in users explicitly persist only the normalized ledger and budgets; raw statement files are never stored.
 - Better Auth encrypts Google access and refresh tokens at rest in D1.
 - MCP data is local in `.finora/ledger.json`.
@@ -150,8 +150,8 @@ The web endpoint uses Responses API file inputs for PDFs/images and Structured O
 ## Hackathon demo in 150 seconds
 
 1. **0:00–0:20** — Problem: bank exports are messy and trackers support only a subset of banks.
-2. **0:20–0:55** — Drop a scanned or sample statement; show Gemini 2.5 Flash normalizing merchants and explaining categories.
-3. **0:55–1:20** — Correct one low-confidence transfer; show totals and “safe to spend” update.
+2. **0:20–0:55** — Drop a real redacted statement; show Gemini 2.5 Flash normalizing merchants and explaining categories.
+3. **0:55–1:20** — Correct one low-confidence transfer; show every metric update from the saved ledger.
 4. **1:20–1:45** — Sync to Google Sheets; open the generated summary and chart.
 5. **1:45–2:20** — In Codex, ask “What can I safely spend?” through the Finora skill and MCP tools.
 6. **2:20–2:30** — Close: one financial memory, useful everywhere.

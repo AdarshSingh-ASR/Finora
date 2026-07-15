@@ -9,5 +9,6 @@ test("build contains the Finora product experience", async () => {
   assert.ok(assets.some((asset) => asset.startsWith("page-") && asset.endsWith(".js")), "missing compiled page asset");
   assert.match(page, /Finora|finora/); assert.match(page, /Your money/); assert.match(page, /Transactions/); assert.match(page, /FINANCIAL HEALTH/); assert.match(page, /SUBSCRIPTIONS/); assert.match(page, /Google Sheets|Sync Sheets/);
   assert.match(page, /Sign in/); assert.match(page, /Gmail every Sunday/);
-  assert.doesNotMatch(page, /codex-preview|Your site is taking shape|react-loading-skeleton/);
+  assert.match(page, /No sample transactions\. Your dashboard starts empty\./);
+  assert.doesNotMatch(page, /sampleStatement|defaultBudgets|codex-preview|Your site is taking shape|react-loading-skeleton/);
 });

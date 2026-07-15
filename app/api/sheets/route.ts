@@ -15,12 +15,11 @@ export async function POST(request: Request) {
       redirect: "follow",
     });
     const text = await response.text();
-    let result: any;
+    let result: Record<string, unknown>;
     try { result = JSON.parse(text); } catch { result = { ok: response.ok, message: text.slice(0, 200) }; }
-    if (!response.ok || result.ok === false) throw new Error(result.error || "Google Sheets sync failed.");
+    if (!response.ok || result.ok === false) throw new Error(typeof result.error === "string" ? result.error : "Google Sheets sync failed.");
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Sheets sync failed." }, { status: 400 });
   }
 }
-

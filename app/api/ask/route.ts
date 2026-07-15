@@ -15,6 +15,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ answer: result.text, provider: result.provider, model: result.model });
   } catch {
-    return NextResponse.json({ answer: answerFinanceQuestion(question, transactions, budgets), provider: "local", demo: true });
+    return NextResponse.json({ answer: answerFinanceQuestion(question, transactions, budgets), provider: "local" });
   }
 }

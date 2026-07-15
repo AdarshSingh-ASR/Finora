@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { configuredProviders, generateWithFallback } from "../../../lib/ai-providers.mjs";
 import { parseCsvFallback } from "../../../lib/finance";
-import { sampleStatement } from "../../../lib/sample-data";
 
 export const runtime = "edge";
 
@@ -42,7 +41,10 @@ export async function POST(request: Request) {
   const body = await request.json() as { filename?: string; mimeType?: string; fileData?: string; text?: string };
   const filename = body.filename || "statement";
   const localResult = () => body.text ? parseCsvFallback(body.text, filename) : null;
-  if (!configuredProviders().vertex && !configuredProviders().groq) return NextResponse.json(localResult() || { ...sampleStatement, bankName: `${filename} · demo preview`, demo: true });
+  if (!configuredProviders().vertex && !configuredProviders().groq) {
+    const parsed = localResult();
+    return parsed ? NextResponse.json(parsed) : NextResponse.json({ error: "Document intelligence is not configured. Add Vertex AI credentials to process PDF or image statements." }, { status: 503 });
+  }
 
   try {
     const result = await generateWithFallback({
@@ -54,7 +56,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ...parseModelJson(result.text), provider: result.provider, model: result.model });
   } catch (error) {
     const parsed = localResult();
-    if (parsed) return NextResponse.json({ ...parsed, demo: true, provider: "local" });
-    return NextResponse.json({ ...sampleStatement, bankName: `${filename} · safe fallback`, demo: true, provider: "local", providerError: error instanceof Error ? error.message : "AI providers were unavailable." });
+    if (parsed) return NextResponse.json({ ...parsed, provider: "local" });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The statement could not be processed by the configured providers." }, { status: 502 });
   }
 }

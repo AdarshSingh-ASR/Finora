@@ -6,13 +6,6 @@ export const categories: Category[] = [
   "Income", "Transfers", "Miscellaneous", "Other",
 ];
 
-export const defaultBudgets: Budget[] = [
-  { category: "Food & Dining", limit: 8000 },
-  { category: "Transport", limit: 4000 },
-  { category: "Shopping", limit: 6000 },
-  { category: "Entertainment", limit: 2500 },
-];
-
 export function money(value: number, currency = "INR") {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 0 }).format(value);
 }
@@ -116,6 +109,8 @@ export function findDuplicateTransactions(transactions: Transaction[]): Duplicat
   const matches: DuplicateMatch[] = [];
   for (let i = 0; i < sorted.length; i++) for (let j = i + 1; j < Math.min(sorted.length, i + 5); j++) {
     const first = sorted[i], second = sorted[j];
+    const hasFirstTime = /T\d{2}:\d{2}|\s\d{1,2}:\d{2}/.test(first.date), hasSecondTime = /T\d{2}:\d{2}|\s\d{1,2}:\d{2}/.test(second.date);
+    if (!hasFirstTime || !hasSecondTime) continue;
     const minutes = Math.abs(new Date(second.date).getTime() - new Date(first.date).getTime()) / 60000;
     if (normalizeMerchant(first.merchant) === normalizeMerchant(second.merchant) && Math.abs(first.amount - second.amount) <= 1 && minutes <= 2) matches.push({ id: `dup-${first.id}-${second.id}`, merchant: normalizeMerchant(first.merchant), amount: first.amount, minutesApart: Math.round(minutes), transactionIds: [first.id, second.id] });
   }
@@ -136,21 +131,21 @@ export function budgetStatus(transactions: Transaction[], budgets: Budget[], per
   return budgets.map((budget) => { const spent = byCategory[budget.category] || 0; return { ...budget, spent, remaining: budget.limit - spent, usedPercent: budget.limit ? (spent / budget.limit) * 100 : 0, status: spent > budget.limit ? "over" : spent / budget.limit >= .8 ? "warning" : "on-track" }; });
 }
 
-export function financialHealthScore(transactions: Transaction[], budgets: Budget[] = defaultBudgets) {
+export function financialHealthScore(transactions: Transaction[], budgets: Budget[] = []) {
   const period = latestPeriod(transactions); const current = inPeriod(transactions, period); const totals = summarize(current);
   const subscriptions = detectSubscriptions(transactions); const statuses = budgetStatus(transactions, budgets, period);
   const savings = Math.max(0, Math.min(35, totals.savingsRate * .7));
-  const budget = statuses.length ? Math.max(0, 25 - statuses.filter((item) => item.status === "over").length * 8 - statuses.filter((item) => item.status === "warning").length * 3) : 15;
+  const budget = Math.max(0, 25 - statuses.filter((item) => item.status === "over").length * 8 - statuses.filter((item) => item.status === "warning").length * 3);
   const recurringRatio = totals.income ? subscriptions.reduce((a, item) => a + item.monthlyCost, 0) / totals.income : 0;
   const recurring = Math.max(0, 20 - recurringRatio * 100);
   const anomalies = Math.max(0, 20 - detectAnomalies(transactions).length * 4);
-  const score = Math.round(savings + budget + recurring + anomalies);
-  return { score, label: score >= 80 ? "Excellent" : score >= 65 ? "Healthy" : score >= 45 ? "Needs attention" : "At risk", breakdown: { savings: Math.round(savings), budget: Math.round(budget), recurring: Math.round(recurring), consistency: Math.round(anomalies) }, period };
+  const breakdown = { savings: Math.round(savings), ...(statuses.length ? { budget: Math.round(budget) } : {}), recurring: Math.round(recurring), consistency: Math.round(anomalies) };
+  const score = Math.round(Object.values(breakdown).reduce((total, value) => total + value, 0) / (statuses.length ? 100 : 75) * 100);
+  return { score, label: score >= 80 ? "Excellent" : score >= 65 ? "Healthy" : score >= 45 ? "Needs attention" : "At risk", breakdown, period };
 }
 
 export function weeklyReport(transactions: Transaction[]) {
-  const sorted = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const end = new Date(sorted[0]?.date || Date.now()); const start = new Date(end); start.setDate(start.getDate() - 6);
+  const end = new Date(); const start = new Date(end); start.setDate(start.getDate() - 6); start.setHours(0, 0, 0, 0);
   const week = transactions.filter((t) => { const date = new Date(t.date); return date >= start && date <= end && t.type === "debit" && !["Transfers", "Investment"].includes(t.category); });
   const totals = summarize(week); const categories = Object.entries(totals.byCategory).sort((a, b) => b[1] - a[1]);
   const merchants = week.reduce<Record<string, number>>((acc, t) => { const merchant = normalizeMerchant(t.merchant); acc[merchant] = (acc[merchant] || 0) + t.amount; return acc; }, {});
@@ -158,12 +153,12 @@ export function weeklyReport(transactions: Transaction[]) {
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), spent: totals.spend, topCategory: categories[0]?.[0] || "None", topCategoryAmount: categories[0]?.[1] || 0, topMerchant: topMerchant?.[0] || "None", largestExpense: largest ? { merchant: normalizeMerchant(largest.merchant), amount: largest.amount } : null, suggestion: categories[0] ? `Reducing ${categories[0][0]} by 15% would save about ${money(categories[0][1] * .15)} per week.` : "Keep importing transactions to receive a useful suggestion." };
 }
 
-export function answerFinanceQuestion(question: string, transactions: Transaction[], budgets = defaultBudgets) {
+export function answerFinanceQuestion(question: string, transactions: Transaction[], budgets: Budget[] = []) {
   const lower = question.toLowerCase(); const current = inPeriod(transactions); const totals = summarize(current); const comparison = compareMonths(transactions); const subscriptions = detectSubscriptions(transactions); const duplicates = findDuplicateTransactions(transactions);
   if (/subscription|recurring/.test(lower)) return `I found ${subscriptions.length} recurring charges costing about ${money(subscriptions.reduce((a, item) => a + item.monthlyCost, 0))}/month: ${subscriptions.map((item) => item.merchant).join(", ") || "none yet"}.`;
   if (/duplicate|charged.*twice/.test(lower)) return duplicates.length ? `${duplicates.length} possible duplicate found: ${duplicates.map((item) => `${item.merchant} ${money(item.amount)}`).join(", ")}.` : "I found no same-merchant, same-amount payments within two minutes.";
   if (/compare|last month|june|july/.test(lower)) return comparison.spendChangePercent == null ? "Import at least two months to compare spending." : `Spending is ${Math.abs(comparison.spendChangePercent).toFixed(0)}% ${comparison.spendChangePercent >= 0 ? "higher" : "lower"} than ${comparison.previous}: ${money(comparison.currentSummary.spend)} versus ${money(comparison.previousSummary.spend)}.`;
-  if (/average daily|per day/.test(lower)) return `Your average daily spending this month is ${money(totals.spend / Math.max(1, new Date().getDate()))}.`;
+  if (/average daily|per day/.test(lower)) { const activeDays = new Set(current.filter((t) => t.type === "debit" && !["Transfers", "Investment"].includes(t.category)).map((t) => t.date.slice(0, 10))).size; return `Your average spending across ${activeDays || 0} active day${activeDays === 1 ? "" : "s"} in ${latestPeriod(transactions)} is ${money(totals.spend / Math.max(1, activeDays))}.`; }
   if (/coffee/.test(lower)) { const items = current.filter((t) => /coffee|cafe|starbucks|blue tokai/i.test(`${t.merchant} ${t.description}`)); return `You spent ${money(items.reduce((a, t) => a + t.amount, 0))} on coffee across ${items.length} payments.`; }
   if (/budget/.test(lower)) { const warning = budgetStatus(transactions, budgets).sort((a, b) => b.usedPercent - a.usedPercent)[0]; return warning ? `${warning.category} is your tightest budget at ${warning.usedPercent.toFixed(0)}% used (${money(warning.spent)} of ${money(warning.limit)}).` : "No budgets are configured."; }
   const top = Object.entries(totals.byCategory).sort((a, b) => b[1] - a[1])[0];
@@ -176,11 +171,11 @@ export function parseCsvFallback(text: string, filename = "statement.csv"): Stat
   const split = (line: string) => line.split(new RegExp(`${delimiter}(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)`)).map((v) => v.replace(/^\"|\"$/g, "").trim());
   const headers = split(lines[0]).map((h) => h.toLowerCase()); const find = (...names: string[]) => headers.findIndex((h) => names.some((n) => h.includes(n)));
   const dateIndex = find("date", "txn date", "transaction date"), descIndex = find("description", "narration", "details", "merchant", "particular", "remark"), debitIndex = find("debit", "withdrawal"), creditIndex = find("credit", "deposit"), amountIndex = find("amount"), typeIndex = find("type", "dr/cr");
-  if (descIndex < 0 || (amountIndex < 0 && debitIndex < 0 && creditIndex < 0)) return null;
+  if (dateIndex < 0 || descIndex < 0 || (amountIndex < 0 && debitIndex < 0 && creditIndex < 0)) return null;
   const transactions = lines.slice(1).map((line, index) => {
     const row = split(line); const clean = (v = "") => Number(v.replace(/[^0-9.-]/g, "")) || 0; const creditAmount = creditIndex >= 0 ? clean(row[creditIndex]) : 0, debitAmount = debitIndex >= 0 ? clean(row[debitIndex]) : 0; const isCredit = creditAmount > 0 || /cr|credit|deposit/.test(typeIndex >= 0 ? row[typeIndex]?.toLowerCase() : ""); const amount = amountIndex >= 0 ? Math.abs(clean(row[amountIndex])) : (creditAmount || debitAmount); const description = row[descIndex] || "Unknown transaction";
-    return { id: `import-${index + 1}`, date: row[dateIndex] || new Date().toISOString().slice(0, 10), merchant: normalizeMerchant(description), description, amount, type: isCredit ? "credit" as const : "debit" as const, category: guessCategory(description, isCredit), confidence: .72, source: filename, explanation: "Categorized locally from the statement narration. Configure Vertex AI for model-based classification." };
-  }).filter((t) => t.amount > 0);
+    return { id: `import-${index + 1}`, date: row[dateIndex] || "", merchant: normalizeMerchant(description), description, amount, type: isCredit ? "credit" as const : "debit" as const, category: guessCategory(description, isCredit), confidence: .72, source: filename, explanation: "Categorized locally from the statement narration. Configure Vertex AI for model-based classification." };
+  }).filter((t) => t.amount > 0 && Boolean(t.date) && Boolean(t.description));
   if (!transactions.length) return null; const totals = summarize(inPeriod(transactions)); const top = Object.entries(totals.byCategory).sort((a, b) => b[1] - a[1])[0];
-  return { accountName: "Imported account", bankName: filename, period: "Imported statement", currency: "INR", transactions, insights: [`${transactions.length} transactions were normalized from ${filename}.`, top ? `${top[0]} is your largest spend category at ${money(top[1])}.` : "No debit transactions found.", `Total outflow in the latest period is ${money(totals.spend)}.`], demo: true };
+  return { accountName: "Imported account", bankName: filename, period: "Imported statement", currency: "INR", transactions, insights: [`${transactions.length} transactions were normalized from ${filename}.`, top ? `${top[0]} is your largest spend category at ${money(top[1])}.` : "No debit transactions found.", `Total outflow in the latest period is ${money(totals.spend)}.`], provider: "local" };
 }

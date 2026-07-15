@@ -35,7 +35,8 @@ export type StatementResult = {
   currency: string;
   transactions: Transaction[];
   insights: string[];
-  demo?: boolean;
+  provider?: "vertex" | "groq" | "local";
+  model?: string;
 };
 
 export type Subscription = {
@@ -65,4 +66,3 @@ export type SpendingAnomaly = {
 };
 
 export type Budget = { category: Category; limit: number };
-

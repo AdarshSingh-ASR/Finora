@@ -44,3 +44,10 @@ export async function PUT(request: Request) {
   }
   return Response.json({ ok: true });
 }
+
+export async function DELETE(request: Request) {
+  const user = await currentUser(request);
+  if (!user) return Response.json({ error: "Sign in required." }, { status: 401 });
+  await getDb().delete(userLedger).where(eq(userLedger.userId, user.id));
+  return Response.json({ ok: true });
+}
