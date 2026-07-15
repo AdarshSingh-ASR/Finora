@@ -7,8 +7,12 @@ export type Category =
   | "Health"
   | "Entertainment"
   | "Travel"
+  | "EMI"
+  | "Investment"
+  | "Salary"
   | "Income"
   | "Transfers"
+  | "Miscellaneous"
   | "Other";
 
 export type Transaction = {
@@ -33,4 +37,32 @@ export type StatementResult = {
   insights: string[];
   demo?: boolean;
 };
+
+export type Subscription = {
+  merchant: string;
+  monthlyCost: number;
+  annualCost: number;
+  occurrences: number;
+  estimatedRenewalDate: string;
+  confidence: number;
+  transactionIds: string[];
+};
+
+export type DuplicateMatch = {
+  id: string;
+  merchant: string;
+  amount: number;
+  minutesApart: number;
+  transactionIds: [string, string];
+};
+
+export type SpendingAnomaly = {
+  id: string;
+  severity: "medium" | "high";
+  title: string;
+  detail: string;
+  transactionId?: string;
+};
+
+export type Budget = { category: Category; limit: number };
 

@@ -37,15 +37,18 @@ The repository includes `.codex/config.toml`; from this project, restart Codex s
 codex mcp add finora -- node mcp/server.mjs
 ```
 
-The server exposes five tools:
+The MCP server is the product surface: agents can chain focused tools without triggering unwanted side effects.
 
-| Tool | Purpose |
+| Stage | Tools |
 | --- | --- |
-| `import_statement` | Normalize CSV offline or PDF/image with GPT-5.6 |
-| `get_spending_summary` | Return income, spend, savings, and category totals |
-| `list_transactions` | Search evidence-backed ledger entries |
-| `correct_category` | Store a user-confirmed correction |
-| `sync_to_google_sheets` | Build the user's Sheet through Apps Script |
+| Extract | `parse_statement` |
+| Clean and classify | `normalize_merchants`, `categorize_transactions` |
+| Review and persist | `save_transactions`, `correct_category`, `search_transactions` |
+| Understand | `summarize_transactions`, `monthly_summary`, `merchant_analysis`, `spending_trends`, `compare_months`, `answer_finance_question` |
+| Protect | `detect_subscriptions`, `find_duplicate_transactions`, `detect_spending_anomalies`, `budget_status`, `financial_health_score` |
+| Export | `sync_to_sheet`, `export_sheet` |
+
+`import_statement`, `get_spending_summary`, `list_transactions`, and `sync_to_google_sheets` remain as backward-compatible convenience tools.
 
 The agent workflow lives in [`skills/finora-money/SKILL.md`](skills/finora-money/SKILL.md).
 
@@ -56,7 +59,19 @@ The agent workflow lives in [`skills/finora-money/SKILL.md`](skills/finora-money
 3. Deploy it as a web app that runs as you. Optionally set `FINORA_SECRET` first.
 4. In Finora, choose **Sync Sheets**, paste the deployed URL and matching secret.
 
-Finora creates a formatted Transactions tab and a Finora Summary tab with totals, category rollup, and a doughnut chart. Your banking data goes only to your OpenAI project and the Apps Script URL you provide.
+Finora creates seven tabs: Finora Summary, Transactions, Monthly Summary, Category Summary, Merchant Summary, Subscriptions, and Pivot Analysis. It also builds category and month comparison charts. Your banking data goes only to your OpenAI project and the Apps Script URL you provide.
+
+## Advanced intelligence
+
+- Merchant normalization across noisy bank and UPI narrations
+- Monthly comparisons and category-level change detection
+- Subscription cadence, estimated renewal, and annualized cost
+- Same-merchant, same-amount duplicate detection within two minutes
+- New high-value merchant and category-jump anomalies
+- Editable budgets with 80% warnings and over-budget states
+- Transparent financial health score with a four-part breakdown
+- Weekly spending report and natural-language ledger questions
+- Receipt image intake and CSV, Excel, JSON, Markdown, and Sheets exports
 
 ## Architecture
 
@@ -96,4 +111,3 @@ The web endpoint uses Responses API file inputs for PDFs/images and Structured O
 Codex accelerated the complete product loop: product framing against the judging rubric, UI implementation, API schema design, MCP tool ergonomics, the reusable skill, and verification. GPT-5.6 is part of the product itself: multimodal statement understanding, merchant normalization, category reasoning, confidence, and grounded insights.
 
 License: MIT (add your chosen copyright holder before publishing).
-

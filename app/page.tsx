@@ -2,14 +2,15 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
-  AlertCircle, ArrowDownLeft, ArrowUpRight, BadgeCheck, Bot, Check, ChevronRight,
-  CircleHelp, Cloud, Download, FileSpreadsheet, FileText, LayoutDashboard,
-  LoaderCircle, LockKeyhole, Menu, MoreHorizontal, ReceiptIndianRupee, Search,
-  Settings2, Sparkles, UploadCloud, WalletCards, X, Zap,
+  Activity, AlertCircle, ArrowDownLeft, ArrowUpRight, BadgeCheck, Bot, CalendarDays,
+  Camera, Check, ChevronRight, CircleHelp, Cloud, CopyCheck, Download, FileSpreadsheet,
+  FileText, Gauge, LayoutDashboard, LoaderCircle, LockKeyhole, Menu, MoreHorizontal,
+  ReceiptIndianRupee, Repeat2, Search, Settings2, ShieldCheck, Sparkles, UploadCloud,
+  WalletCards, X, Zap,
 } from "lucide-react";
-import { categories, money, summarize } from "../lib/finance";
+import { answerFinanceQuestion, budgetStatus, categories, compareMonths, defaultBudgets, detectAnomalies, detectSubscriptions, financialHealthScore, findDuplicateTransactions, inPeriod, latestPeriod, money, summarize, weeklyReport } from "../lib/finance";
 import { categoryColors, sampleStatement } from "../lib/sample-data";
-import type { Category, StatementResult, Transaction } from "../lib/types";
+import type { Budget, Category, StatementResult, Transaction } from "../lib/types";
 
 type View = "overview" | "transactions" | "agent";
 type Toast = { tone: "good" | "bad"; message: string } | null;
@@ -75,10 +76,22 @@ export default function Home() {
   const [toast, setToast] = useState<Toast>(null);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("Ask about a merchant, category, recurring charge, or how much is safe to spend.");
+  const [asking, setAsking] = useState(false);
+  const [budgets, setBudgets] = useState<Budget[]>(defaultBudgets);
   const fileRef = useRef<HTMLInputElement>(null);
+  const receiptRef = useRef<HTMLInputElement>(null);
 
-  const summary = useMemo(() => summarize(statement.transactions), [statement]);
+  const activePeriod = useMemo(() => latestPeriod(statement.transactions), [statement]);
+  const currentTransactions = useMemo(() => inPeriod(statement.transactions, activePeriod), [statement, activePeriod]);
+  const summary = useMemo(() => summarize(currentTransactions), [currentTransactions]);
   const categoryEntries = useMemo(() => Object.entries(summary.byCategory).sort((a, b) => b[1] - a[1]), [summary]);
+  const comparison = useMemo(() => compareMonths(statement.transactions, activePeriod), [statement, activePeriod]);
+  const subscriptions = useMemo(() => detectSubscriptions(statement.transactions), [statement]);
+  const duplicateMatches = useMemo(() => findDuplicateTransactions(statement.transactions), [statement]);
+  const anomalies = useMemo(() => detectAnomalies(statement.transactions), [statement]);
+  const budgetStatuses = useMemo(() => budgetStatus(statement.transactions, budgets, activePeriod), [statement, budgets, activePeriod]);
+  const health = useMemo(() => financialHealthScore(statement.transactions, budgets), [statement, budgets]);
+  const week = useMemo(() => weeklyReport(statement.transactions), [statement]);
   const visibleTransactions = statement.transactions.filter((transaction) => `${transaction.merchant} ${transaction.description} ${transaction.category}`.toLowerCase().includes(search.toLowerCase()));
 
   function notify(message: string, tone: "good" | "bad" = "good") {
@@ -86,7 +99,7 @@ export default function Home() {
     window.setTimeout(() => setToast(null), 4200);
   }
 
-  async function handleFile(file?: File) {
+  async function handleFile(file?: File, append = false) {
     if (!file) return;
     if (file.size > 18 * 1024 * 1024) return notify("Please choose a statement under 18 MB.", "bad");
     setUploading(true);
@@ -114,10 +127,10 @@ export default function Home() {
       });
       const result = await response.json();
       if (!response.ok || result.error) throw new Error(result.error || "Statement analysis failed.");
-      setStatement(result);
+      setStatement((current) => append ? { ...current, transactions: [...result.transactions, ...current.transactions], insights: [`Added ${result.transactions.length} receipt transaction${result.transactions.length === 1 ? "" : "s"}.`, ...current.insights.slice(0, 2)] } : result);
       setSynced(false);
       setView("overview");
-      notify(result.demo ? "Statement loaded in demo mode. Add OPENAI_API_KEY for full document intelligence." : `${result.transactions.length} transactions found and categorized.`);
+      notify(result.demo ? `${append ? "Receipt" : "Statement"} loaded in demo mode. Add OPENAI_API_KEY for full document intelligence.` : `${result.transactions.length} transactions found and categorized.`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "We couldn't read that statement.", "bad");
     } finally { setUploading(false); }
@@ -128,13 +141,20 @@ export default function Home() {
     setSynced(false);
   }
 
-  function exportCsv() {
+  async function exportData(format: "csv" | "json" | "xlsx" | "markdown") {
     const header = ["Date", "Merchant", "Description", "Type", "Amount", "Category", "Confidence"];
     const rows = statement.transactions.map((t) => [t.date, t.merchant, t.description, t.type, t.amount, t.category, t.confidence]);
-    const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    const anchor = document.createElement("a"); anchor.href = url; anchor.download = "finora-transactions.csv"; anchor.click(); URL.revokeObjectURL(url);
-    notify("Clean ledger exported as CSV.");
+    if (format === "xlsx") {
+      const XLSX = await import("xlsx"); const book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([header, ...rows]), "Transactions");
+      XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet([{ Period: activePeriod, Income: summary.income, Spent: summary.spend, Saved: summary.saved, "Health score": health.score }]), "Summary");
+      XLSX.writeFile(book, "finora-report.xlsx"); notify("Excel workbook exported."); return;
+    }
+    const content = format === "json" ? JSON.stringify({ statement, summary, subscriptions, anomalies, budgets: budgetStatuses, health }, null, 2)
+      : format === "markdown" ? `# Finora money report\n\n**Period:** ${activePeriod}\n\n- Income: ${money(summary.income)}\n- Spent: ${money(summary.spend)}\n- Saved: ${money(summary.saved)}\n- Health score: ${health.score}/100\n\n## Categories\n${categoryEntries.map(([category, amount]) => `- ${category}: ${money(amount)}`).join("\n")}\n\n## Subscriptions\n${subscriptions.map((item) => `- ${item.merchant}: ${money(item.monthlyCost)}/month`).join("\n") || "None detected"}`
+      : [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
+    const mime = format === "json" ? "application/json" : format === "markdown" ? "text/markdown" : "text/csv";
+    const url = URL.createObjectURL(new Blob([content], { type: mime })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `finora-report.${format === "markdown" ? "md" : format}`; anchor.click(); URL.revokeObjectURL(url); notify(`${format.toUpperCase()} report exported.`);
   }
 
   async function syncSheets() {
@@ -150,16 +170,15 @@ export default function Home() {
     finally { setSyncing(false); }
   }
 
-  function askAgent(prompt = question) {
+  async function askAgent(prompt = question) {
     if (!prompt.trim()) return;
     setQuestion(prompt);
-    const lower = prompt.toLowerCase();
-    const top = categoryEntries[0];
-    const recurring = statement.transactions.filter((t) => /netflix|cult|spotify|subscription|standing|\bsi\b/i.test(`${t.merchant} ${t.description}`));
-    if (/safe|left|spend/.test(lower)) setAnswer(`You have ${money(summary.saved)} left after recorded outflows. Keeping a 55% buffer for savings and upcoming fixed costs leaves about ${money(Math.max(0, summary.saved * .45))} safe to spend.`);
-    else if (/recurr|subscription/.test(lower)) setAnswer(`I found ${recurring.length} likely recurring charges totaling ${money(recurring.reduce((a, t) => a + t.amount, 0))}: ${recurring.map((t) => t.merchant).join(", ") || "none in this period"}.`);
-    else if (/food|dining/.test(lower)) setAnswer(`Food & Dining is ${money(summary.byCategory["Food & Dining"] || 0)} across ${statement.transactions.filter((t) => t.category === "Food & Dining").length} transactions. Blinkit and Swiggy account for most of it.`);
-    else setAnswer(`${top?.[0] || "Spending"} is your largest outflow at ${money(top?.[1] || 0)}. You saved ${money(summary.saved)}, a ${summary.savingsRate.toFixed(0)}% savings rate for this statement period.`);
+    setAsking(true);
+    try {
+      const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: prompt, transactions: statement.transactions, budgets }) });
+      const result = await response.json(); if (!response.ok || result.error) throw new Error(result.error || "Question failed."); setAnswer(result.answer);
+    } catch { setAnswer(answerFinanceQuestion(prompt, statement.transactions, budgets)); }
+    finally { setAsking(false); }
   }
 
   return (
@@ -186,7 +205,7 @@ export default function Home() {
           </div>
 
           <div className="metric-grid">
-            <article className="metric-card spend-card"><div className="metric-label"><span>Spent</span><span className="metric-chip down">↓ 8% vs last</span></div><strong>{money(summary.spend)}</strong><small>across {statement.transactions.filter((t) => t.type === "debit").length} payments</small><MiniTrend /></article>
+            <article className="metric-card spend-card"><div className="metric-label"><span>Spent · {activePeriod}</span>{comparison.spendChangePercent != null && <span className={`metric-chip ${comparison.spendChangePercent <= 0 ? "down" : "up"}`}>{comparison.spendChangePercent > 0 ? "↑" : "↓"} {Math.abs(comparison.spendChangePercent).toFixed(0)}% vs last</span>}</div><strong>{money(summary.spend)}</strong><small>across {currentTransactions.filter((t) => t.type === "debit").length} payments</small><MiniTrend /></article>
             <article className="metric-card"><div className="metric-label"><span>Income</span><ArrowDownLeft size={17}/></div><strong>{money(summary.income)}</strong><small>money in this period</small><div className="mini-bar"><i style={{ width: "88%" }}/></div></article>
             <article className="metric-card ink-card"><div className="metric-label"><span>Saved</span><Sparkles size={17}/></div><strong>{money(summary.saved)}</strong><small>{summary.savingsRate.toFixed(0)}% savings rate</small><span className="good-pill">On track</span></article>
             <article className="metric-card safe-card"><div className="metric-label"><span>Safe to spend</span><CircleHelp size={17}/></div><strong>{money(Math.max(0, summary.saved * .45))}</strong><small>until month-end</small><span className="scribble">after bills + goals</span></article>
@@ -208,10 +227,40 @@ export default function Home() {
             </article>
           </div>
 
+          <div className="intelligence-grid">
+            <article className="panel health-panel">
+              <div className="feature-head"><span><Gauge size={18}/></span><div><p className="eyebrow">FINANCIAL HEALTH</p><h2>{health.score}<small>/100</small> · {health.label}</h2></div></div>
+              <div className="score-track"><i style={{ width: `${health.score}%` }}/></div>
+              <div className="score-breakdown">{Object.entries(health.breakdown).map(([label, value]) => <span key={label}><strong>{value}</strong>{label}</span>)}</div>
+            </article>
+            <article className="panel subscription-panel">
+              <div className="feature-head"><span><Repeat2 size={18}/></span><div><p className="eyebrow">SUBSCRIPTIONS</p><h2>{money(subscriptions.reduce((a, item) => a + item.monthlyCost, 0))}<small>/month</small></h2></div></div>
+              <div className="subscription-list">{subscriptions.slice(0, 3).map((item) => <div key={item.merchant}><span><strong>{item.merchant}</strong><small>Renews ~{new Date(item.estimatedRenewalDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</small></span><strong>{money(item.monthlyCost)}</strong></div>)}</div>
+              <small className="annual-note">{money(subscriptions.reduce((a, item) => a + item.annualCost, 0))} estimated annually</small>
+            </article>
+            <article className="panel risk-panel">
+              <div className="feature-head"><span><ShieldCheck size={18}/></span><div><p className="eyebrow">SMART REVIEW</p><h2>{duplicateMatches.length + anomalies.length} item{duplicateMatches.length + anomalies.length === 1 ? "" : "s"} to check</h2></div></div>
+              {duplicateMatches[0] && <div className="risk-item"><CopyCheck size={16}/><span><strong>Possible duplicate</strong><small>{duplicateMatches[0].merchant} · {money(duplicateMatches[0].amount)} · {duplicateMatches[0].minutesApart} min apart</small></span></div>}
+              {anomalies.slice(0, duplicateMatches.length ? 1 : 2).map((item) => <div className="risk-item" key={item.id}><Activity size={16}/><span><strong>{item.title}</strong><small>{item.detail}</small></span></div>)}
+            </article>
+          </div>
+
+          <div className="planning-grid">
+            <article className="panel budget-panel">
+              <div className="panel-head"><div><p className="eyebrow">BUDGET PULSE</p><h2>Stay ahead, category by category</h2></div><span className="ai-label">Editable limits</span></div>
+              <div className="budget-list">{budgetStatuses.map((item, index) => <div className={`budget-row ${item.status}`} key={item.category}><div><strong>{item.category}</strong><span>{money(item.spent)} of <label>₹<input type="number" value={budgets[index]?.limit || 0} onChange={(event) => setBudgets((current) => current.map((budget, budgetIndex) => budgetIndex === index ? { ...budget, limit: Number(event.target.value) } : budget))}/></label></span></div><div className="budget-track"><i style={{ width: `${Math.min(100, item.usedPercent)}%` }}/></div><strong>{item.usedPercent.toFixed(0)}%</strong></div>)}</div>
+            </article>
+            <article className="panel weekly-panel">
+              <div className="feature-head"><span><CalendarDays size={18}/></span><div><p className="eyebrow">WEEKLY AI REPORT</p><h2>{money(week.spent)} spent</h2></div></div>
+              <div className="weekly-facts"><span><small>Largest category</small><strong>{week.topCategory}</strong></span><span><small>Largest merchant</small><strong>{week.topMerchant}</strong></span><span><small>Biggest expense</small><strong>{week.largestExpense ? `${week.largestExpense.merchant} · ${money(week.largestExpense.amount)}` : "None"}</strong></span></div>
+              <p>{week.suggestion}</p>
+            </article>
+          </div>
+
           <div className="lower-grid">
             <article className="panel recent-panel">
               <div className="panel-head"><div><p className="eyebrow">FRESHLY SORTED</p><h2>Recent transactions</h2></div><span className="ai-label"><Sparkles size={13}/>GPT-5.6 categorized</span></div>
-              <div className="transaction-table compact"><div className="transaction-head"><span>Merchant</span><span>Date</span><span>Category</span><span>Confidence</span><span>Amount</span></div>{statement.transactions.slice(0, 5).map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} onCategory={(category) => updateCategory(transaction.id, category)} />)}</div>
+              <div className="transaction-table compact"><div className="transaction-head"><span>Merchant</span><span>Date</span><span>Category</span><span>Confidence</span><span>Amount</span></div>{currentTransactions.slice(0, 5).map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} onCategory={(category) => updateCategory(transaction.id, category)} />)}</div>
               <button className="full-row-button" onClick={() => setView("transactions")}>View all {statement.transactions.length} transactions <ChevronRight size={15}/></button>
             </article>
 
@@ -219,14 +268,13 @@ export default function Home() {
               <div className="upload-icon"><UploadCloud size={25}/></div>
               <p className="eyebrow">ADD ANOTHER ACCOUNT</p><h2>Drop any statement.</h2><p>PDF, CSV, XLSX, scanned image — from any bank or UPI app.</p>
               <button onClick={() => fileRef.current?.click()} disabled={uploading}>{uploading ? <><LoaderCircle className="spin" size={17}/>{uploadLabel}</> : <><FileText size={17}/>Choose statement</>}</button>
-              <input ref={fileRef} type="file" accept=".pdf,.csv,.tsv,.txt,.xlsx,.xls,image/png,image/jpeg" hidden onChange={(event) => handleFile(event.target.files?.[0])}/>
               <small><LockKeyhole size={12}/>Encrypted in transit · never used to train models</small>
             </article>
           </div>
         </>}
 
         {view === "transactions" && <section className="view-page">
-          <div className="view-heading"><div><p className="eyebrow">YOUR CLEAN LEDGER</p><h1>Transactions</h1><p>{statement.transactions.length} payments from {statement.bankName}. Click any category to correct it.</p></div><div className="view-actions"><button className="secondary-button" onClick={exportCsv}><Download size={16}/>Export CSV</button><button className="primary-button" onClick={() => fileRef.current?.click()}><UploadCloud size={16}/>Import statement</button></div></div>
+          <div className="view-heading"><div><p className="eyebrow">YOUR CLEAN LEDGER</p><h1>Transactions</h1><p>{statement.transactions.length} payments from {statement.bankName}. Click any category to correct it.</p></div><div className="view-actions"><select className="export-select" defaultValue="" onChange={(event) => { if (event.target.value) exportData(event.target.value as "csv" | "json" | "xlsx" | "markdown"); event.target.value = ""; }}><option value="" disabled>Export…</option><option value="csv">CSV</option><option value="xlsx">Excel</option><option value="json">JSON</option><option value="markdown">Markdown</option></select><button className="secondary-button" onClick={() => receiptRef.current?.click()}><Camera size={16}/>Scan receipt</button><button className="primary-button" onClick={() => fileRef.current?.click()}><UploadCloud size={16}/>Import statement</button></div></div>
           <div className="filter-bar"><label><Search size={17}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search merchant, narration, category…"/></label><button><Settings2 size={16}/>Filters</button><span>{visibleTransactions.length} results</span></div>
           <div className="panel ledger-panel"><div className="transaction-table"><div className="transaction-head"><span>Merchant</span><span>Date</span><span>Category</span><span>Confidence</span><span>Amount</span></div>{visibleTransactions.map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} onCategory={(category) => updateCategory(transaction.id, category)} />)}</div></div>
         </section>}
@@ -235,7 +283,7 @@ export default function Home() {
           <div className="agent-copy"><p className="eyebrow"><span className="live-dot"/>YOUR FINANCIAL COPILOT</p><h1>Ask your money<br/>a real question.</h1><p>Finora gives your agent a clean financial memory through MCP — not a screenshot, not a vague guess.</p><div className="agent-proof"><span><Check size={14}/>Reads your corrected categories</span><span><Check size={14}/>Answers from transaction evidence</span><span><Check size={14}/>Works inside Codex</span></div></div>
           <div className="agent-console">
             <div className="console-head"><div><Mark/><span><strong>Finora agent</strong><small><i/>MCP connected · {statement.transactions.length} transactions</small></span></div><MoreHorizontal size={19}/></div>
-            <div className="chat-body"><div className="bot-message"><span><Sparkles size={16}/></span><p>{answer}</p></div><div className="suggestion-grid">{["What can I safely spend?", "Find recurring charges", "Break down my food spend", "What changed this month?"].map((prompt) => <button key={prompt} onClick={() => askAgent(prompt)}>{prompt}<ChevronRight size={14}/></button>)}</div></div>
+            <div className="chat-body"><div className="bot-message"><span>{asking ? <LoaderCircle className="spin" size={16}/> : <Sparkles size={16}/>}</span><p>{asking ? "Reading your ledger…" : answer}</p></div><div className="suggestion-grid">{["Where did I waste the most?", "Which merchant charged me twice?", "Show subscriptions", "Compare June vs July", "What's my average daily spending?", "How is my budget doing?"].map((prompt) => <button key={prompt} onClick={() => askAgent(prompt)}>{prompt}<ChevronRight size={14}/></button>)}</div></div>
             <form className="ask-form" onSubmit={(event) => { event.preventDefault(); askAgent(); }}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about your money…"/><button aria-label="Ask Finora"><ArrowUpRight size={18}/></button></form>
             <div className="console-foot"><code>finora.get_spending_summary</code><span>Evidence-backed</span></div>
           </div>
@@ -244,8 +292,10 @@ export default function Home() {
 
       <footer><div className="footer-brand"><Mark/><span>Built for OpenAI Build Week · Apps for your life</span></div><div><span>GPT-5.6</span><span>MCP</span><span>Google Sheets</span></div></footer>
 
+      <input ref={fileRef} type="file" accept=".pdf,.csv,.tsv,.txt,.xlsx,.xls,image/png,image/jpeg" hidden onChange={(event) => handleFile(event.target.files?.[0])}/>
+      <input ref={receiptRef} type="file" accept="image/png,image/jpeg,.pdf" hidden onChange={(event) => handleFile(event.target.files?.[0], true)}/>
       {sheetOpen && <div className="modal-backdrop" onMouseDown={() => setSheetOpen(false)}><div className="modal" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="modal-close" onClick={() => setSheetOpen(false)}><X size={18}/></button><span className="modal-icon"><FileSpreadsheet size={24}/></span><p className="eyebrow">ONE-TAP REPORTING</p><h2>Send it to Sheets</h2><p>Finora will create a clean ledger, monthly summary, category rollup, and two charts in your own Google Sheet.</p>
+        <button className="modal-close" onClick={() => setSheetOpen(false)}><X size={18}/></button><span className="modal-icon"><FileSpreadsheet size={24}/></span><p className="eyebrow">ONE-TAP REPORTING</p><h2>Send it to Sheets</h2><p>Finora will create raw transactions, monthly, category, merchant and subscription summaries, pivot analysis, and charts in your own Google Sheet.</p>
         <label>Apps Script web app URL<input value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://script.google.com/macros/s/…/exec"/></label><label>Sync secret <small>(optional)</small><input type="password" value={sheetSecret} onChange={(event) => setSheetSecret(event.target.value)} placeholder="Matches FINORA_SECRET in Code.gs"/></label>
         <details><summary>How do I get this URL?</summary><ol><li>Open the included <code>integrations/google-sheets/Code.gs</code>.</li><li>Paste it into a new Apps Script project.</li><li>Deploy as a web app, then paste its URL here.</li></ol></details>
         <button className="modal-action" onClick={syncSheets} disabled={syncing}>{syncing ? <><LoaderCircle className="spin" size={17}/>Building your sheet…</> : <><Cloud size={17}/>Create report in Google Sheets</>}</button>

@@ -11,7 +11,7 @@ const transactionSchema = {
     id: { type: "string" }, date: { type: "string" }, merchant: { type: "string" },
     description: { type: "string" }, amount: { type: "number" },
     type: { type: "string", enum: ["debit", "credit"] },
-    category: { type: "string", enum: ["Food & Dining", "Housing", "Transport", "Shopping", "Bills & Utilities", "Health", "Entertainment", "Travel", "Income", "Transfers", "Other"] },
+    category: { type: "string", enum: ["Food & Dining", "Housing", "Transport", "Shopping", "Bills & Utilities", "EMI", "Investment", "Health", "Entertainment", "Travel", "Salary", "Income", "Transfers", "Miscellaneous", "Other"] },
     confidence: { type: "number" }, source: { type: "string" }, explanation: { type: "string" },
   },
   required: ["id", "date", "merchant", "description", "amount", "type", "category", "confidence", "source", "explanation"],
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
         model: process.env.OPENAI_MODEL || "gpt-5.6",
         reasoning: { effort: "medium" },
         input: [
-          { role: "system", content: [{ type: "input_text", text: "You are Finora's bank-statement analyst. Extract transactions faithfully across Indian and international bank formats, card statements, UPI narrations, OCR-scanned PDFs and spreadsheets. Never invent missing transactions. Normalize merchant names. Treat investment contributions and person-to-person transfers as Transfers, not spending. Explain every category in one short sentence. Confidence must be 0..1. Produce exactly three specific, useful insights grounded in the statement." }] },
+          { role: "system", content: [{ type: "input_text", text: "You are Finora's bank-statement analyst. Extract transactions faithfully across Indian and international bank formats, card statements, UPI narrations, OCR-scanned PDFs, receipt images and spreadsheets. Never invent missing transactions. Normalize merchant variants such as AMZN PAY and AMAZON SELLER SERVICES to Amazon. Separate Salary, EMI, Investment and person-to-person Transfers from consumption spend. Use Miscellaneous only when no safer category fits. Explain every category in one short sentence. Confidence must be 0..1. Produce exactly three specific, useful insights grounded in the statement, including changes, recurring charges, duplicates, or anomalies when evidence supports them." }] },
           { role: "user", content: userContent },
         ],
         text: { format: { type: "json_schema", name: "finora_statement", strict: true, schema: statementSchema } },
@@ -77,4 +77,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not analyze this statement." }, { status: 400 });
   }
 }
-

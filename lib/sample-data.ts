@@ -3,7 +3,7 @@ import type { StatementResult } from "./types";
 export const sampleStatement: StatementResult = {
   accountName: "Everyday account",
   bankName: "HDFC Bank · UPI",
-  period: "01 Jul — 15 Jul 2026",
+  period: "01 Jun — 15 Jul 2026",
   currency: "INR",
   insights: [
     "Food delivery is 31% higher than your last comparable period.",
@@ -11,7 +11,7 @@ export const sampleStatement: StatementResult = {
     "At this pace, you can safely spend ₹21,840 before month-end.",
   ],
   transactions: [
-    { id: "t01", date: "2026-07-15", merchant: "Salary", description: "NEFT ACME DESIGN LABS SALARY JUL", amount: 142000, type: "credit", category: "Income", confidence: 0.99, source: "HDFC statement", explanation: "Incoming NEFT marked as salary." },
+    { id: "t01", date: "2026-07-15", merchant: "Salary", description: "NEFT ACME DESIGN LABS SALARY JUL", amount: 142000, type: "credit", category: "Salary", confidence: 0.99, source: "HDFC statement", explanation: "Incoming NEFT marked as salary." },
     { id: "t02", date: "2026-07-15", merchant: "The Whole Truth", description: "UPI/THE WHOLE TRUTH/742119", amount: 1249, type: "debit", category: "Food & Dining", confidence: 0.94, source: "HDFC statement", explanation: "Food brand merchant matched with high confidence." },
     { id: "t03", date: "2026-07-14", merchant: "Uber", description: "UPI/UBER INDIA SYSTEMS/902481", amount: 486, type: "debit", category: "Transport", confidence: 0.99, source: "HDFC statement", explanation: "Known ride-hailing merchant." },
     { id: "t04", date: "2026-07-13", merchant: "Rent", description: "IMPS/RENT JULY/ADARSH HOMES", amount: 32000, type: "debit", category: "Housing", confidence: 0.98, source: "HDFC statement", explanation: "Narration explicitly identifies monthly rent." },
@@ -26,7 +26,18 @@ export const sampleStatement: StatementResult = {
     { id: "t13", date: "2026-07-04", merchant: "UPI transfer", description: "UPI/ROHAN K/982102", amount: 4500, type: "debit", category: "Transfers", confidence: 0.68, source: "HDFC statement", explanation: "Person-to-person transfer; purpose is not visible in the statement." },
     { id: "t14", date: "2026-07-03", merchant: "Jio", description: "BBPS RELIANCE JIO POSTPAID", amount: 1099, type: "debit", category: "Bills & Utilities", confidence: 0.99, source: "HDFC statement", explanation: "Mobile bill paid through BBPS." },
     { id: "t15", date: "2026-07-02", merchant: "Blue Tokai", description: "UPI/BLUE TOKAI COFFEE/117704", amount: 620, type: "debit", category: "Food & Dining", confidence: 0.98, source: "HDFC statement", explanation: "Known café merchant." },
-    { id: "t16", date: "2026-07-01", merchant: "SIP · Nifty 50", description: "ACH/UTI NIFTY 50 INDEX FUND", amount: 15000, type: "debit", category: "Transfers", confidence: 0.91, source: "HDFC statement", explanation: "Investment contribution treated as a transfer, not consumption." },
+    { id: "t16", date: "2026-07-01", merchant: "SIP · Nifty 50", description: "ACH/UTI NIFTY 50 INDEX FUND", amount: 15000, type: "debit", category: "Investment", confidence: 0.97, source: "HDFC statement", explanation: "Recurring investment contribution, excluded from consumption spend." },
+    { id: "t17", date: "2026-07-10T14:31:00+05:30", merchant: "Amazon", description: "UPI/AMZN PAY/771120", amount: 899, type: "debit", category: "Shopping", confidence: 0.91, source: "HDFC statement", explanation: "Known retail merchant." },
+    { id: "t18", date: "2026-07-10T14:32:00+05:30", merchant: "Amazon Pay", description: "UPI/AMAZON SELLER SERVICES/771121", amount: 899, type: "debit", category: "Shopping", confidence: 0.88, source: "HDFC statement", explanation: "Possible duplicate of the preceding Amazon payment." },
+    { id: "j01", date: "2026-06-15", merchant: "Salary", description: "NEFT ACME DESIGN LABS SALARY JUN", amount: 142000, type: "credit", category: "Salary", confidence: 0.99, source: "HDFC statement", explanation: "Incoming NEFT marked as salary." },
+    { id: "j02", date: "2026-06-11", merchant: "Cult.fit", description: "SI CULTFIT HEALTHCARE", amount: 1799, type: "debit", category: "Health", confidence: 0.96, source: "HDFC statement", explanation: "Monthly fitness subscription." },
+    { id: "j03", date: "2026-06-07", merchant: "Netflix", description: "SI NETFLIX.COM", amount: 649, type: "debit", category: "Entertainment", confidence: 0.99, source: "HDFC statement", explanation: "Monthly video subscription." },
+    { id: "j04", date: "2026-06-12", merchant: "Swiggy", description: "UPI/SWIGGY/110021", amount: 520, type: "debit", category: "Food & Dining", confidence: 0.99, source: "HDFC statement", explanation: "Known food-delivery merchant." },
+    { id: "j05", date: "2026-06-19", merchant: "Zomato", description: "UPI/ZOMATO/110871", amount: 640, type: "debit", category: "Food & Dining", confidence: 0.99, source: "HDFC statement", explanation: "Known food-delivery merchant." },
+    { id: "j06", date: "2026-06-23", merchant: "Blinkit", description: "UPI/BLINKIT/110992", amount: 1490, type: "debit", category: "Food & Dining", confidence: 0.96, source: "HDFC statement", explanation: "Grocery delivery categorized as food." },
+    { id: "j07", date: "2026-06-13", merchant: "Rent", description: "IMPS/RENT JUNE/ADARSH HOMES", amount: 32000, type: "debit", category: "Housing", confidence: 0.99, source: "HDFC statement", explanation: "Monthly rent." },
+    { id: "j08", date: "2026-06-09", merchant: "BESCOM", description: "BBPS BESCOM ELECTRICITY", amount: 1760, type: "debit", category: "Bills & Utilities", confidence: 0.99, source: "HDFC statement", explanation: "Electricity bill." },
+    { id: "j09", date: "2026-06-01", merchant: "SIP · Nifty 50", description: "ACH/UTI NIFTY 50 INDEX FUND", amount: 15000, type: "debit", category: "Investment", confidence: 0.98, source: "HDFC statement", explanation: "Monthly investment contribution." },
   ],
 };
 
@@ -40,7 +51,10 @@ export const categoryColors: Record<string, string> = {
   Entertainment: "#7f8cff",
   Travel: "#1f9dff",
   Income: "#2c9f6b",
+  Salary: "#2c9f6b",
+  EMI: "#cc5f3d",
+  Investment: "#325e3f",
   Transfers: "#8b8b80",
+  Miscellaneous: "#c6c6bb",
   Other: "#c6c6bb",
 };
-
