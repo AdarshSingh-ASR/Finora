@@ -6,7 +6,7 @@ Built for **OpenAI Build Week 2026 — Apps for your life**.
 
 ## Why this can win
 
-Most expense trackers start after the work: users must connect a supported bank, fix a brittle CSV, or label every payment. Finora starts with the artifact everyone already has — a statement. GPT-5.6 reads native or scanned PDFs across inconsistent bank formats, normalizes messy UPI narrations, and explains every category. Corrections remain visible and agent-safe.
+Most expense trackers start after the work: users must connect a supported bank, fix a brittle CSV, or label every payment. Finora starts with the artifact everyone already has — a statement. Gemini 2.5 Flash on Vertex AI reads native or scanned PDFs across inconsistent bank formats, normalizes messy UPI narrations, and explains every category. Groq GPT-OSS 20B is the automatic text fallback. Corrections remain visible and agent-safe.
 
 The result is not trapped in one UI. It becomes:
 
@@ -27,7 +27,17 @@ npm run dev
 
 Open the printed local URL. The app starts with realistic demo data. Upload [`samples/upi-statement.csv`](samples/upi-statement.csv) to exercise the complete no-key path.
 
-Add `OPENAI_API_KEY` to `.env.local` to enable GPT-5.6 parsing for PDFs, scanned statements, screenshots, and unfamiliar formats. The default model is `gpt-5.6` and can be changed with `OPENAI_MODEL`.
+Add `GOOGLE_VERTEX_CREDENTIALS` to `.env.local` to enable Gemini 2.5 Flash parsing for PDFs, scanned statements, screenshots, and unfamiliar formats. The value can be one-line Google service-account JSON or its base64 encoding. Set `GROQ_API_KEY` to enable the automatic `openai/gpt-oss-20b` fallback for CSV/text categorization and finance questions.
+
+```env
+GOOGLE_VERTEX_CREDENTIALS={"type":"service_account","project_id":"..."}
+GOOGLE_VERTEX_LOCATION=global
+GOOGLE_VERTEX_MODEL=gemini-2.5-flash
+GROQ_API_KEY=
+GROQ_MODEL=openai/gpt-oss-20b
+```
+
+The Vertex service account needs permission to invoke Vertex AI models in its project, and the Vertex AI API must be enabled. Keep the JSON private and never commit `.env`.
 
 ## Google sign-in and weekly Gmail reports
 
@@ -95,7 +105,7 @@ The agent workflow lives in [`skills/finora-money/SKILL.md`](skills/finora-money
 3. Deploy it as a web app that runs as you. Optionally set `FINORA_SECRET` first.
 4. In Finora, choose **Sync Sheets**, paste the deployed URL and matching secret.
 
-Finora creates seven tabs: Finora Summary, Transactions, Monthly Summary, Category Summary, Merchant Summary, Subscriptions, and Pivot Analysis. It also builds category and month comparison charts. Your banking data goes only to your OpenAI project and the Apps Script URL you provide.
+Finora creates seven tabs: Finora Summary, Transactions, Monthly Summary, Category Summary, Merchant Summary, Subscriptions, and Pivot Analysis. It also builds category and month comparison charts. Model requests go to your Google Cloud project, or to your Groq project only when the text fallback is needed; Sheets data goes only to the Apps Script URL you provide.
 
 ## Advanced intelligence
 
@@ -114,8 +124,10 @@ Finora creates seven tabs: Finora Summary, Transactions, Monthly Summary, Catego
 ```mermaid
 flowchart LR
   A["Bank / UPI statement"] --> B["Finora web app"]
-  B --> C["GPT-5.6 Responses API"]
+  B --> C["Vertex AI · Gemini 2.5 Flash"]
   C --> D["Normalized + explained ledger"]
+  B -. text fallback .-> I["Groq · GPT-OSS 20B"]
+  I --> D
   D --> E["Consumer dashboard"]
   D --> F["Google Sheets + charts"]
   D --> G["Finora MCP server"]
@@ -138,7 +150,7 @@ The web endpoint uses Responses API file inputs for PDFs/images and Structured O
 ## Hackathon demo in 150 seconds
 
 1. **0:00–0:20** — Problem: bank exports are messy and trackers support only a subset of banks.
-2. **0:20–0:55** — Drop a scanned or sample statement; show GPT-5.6 normalizing merchants and explaining categories.
+2. **0:20–0:55** — Drop a scanned or sample statement; show Gemini 2.5 Flash normalizing merchants and explaining categories.
 3. **0:55–1:20** — Correct one low-confidence transfer; show totals and “safe to spend” update.
 4. **1:20–1:45** — Sync to Google Sheets; open the generated summary and chart.
 5. **1:45–2:20** — In Codex, ask “What can I safely spend?” through the Finora skill and MCP tools.
@@ -146,6 +158,6 @@ The web endpoint uses Responses API file inputs for PDFs/images and Structured O
 
 ## OpenAI Build Week
 
-Codex accelerated the complete product loop: product framing against the judging rubric, UI implementation, API schema design, MCP tool ergonomics, the reusable skill, and verification. GPT-5.6 is part of the product itself: multimodal statement understanding, merchant normalization, category reasoning, confidence, and grounded insights.
+Codex accelerated the complete product loop: product framing against the judging rubric, UI implementation, API schema design, MCP tool ergonomics, the reusable skill, and verification. Gemini 2.5 Flash provides multimodal statement understanding; Groq GPT-OSS 20B provides a fast text fallback; Codex, MCP, and the Finora skill make the financial memory agent-accessible.
 
 License: MIT (add your chosen copyright holder before publishing).

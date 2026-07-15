@@ -172,7 +172,7 @@ export default function Home() {
           const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file);
         });
       }
-      setUploadLabel("Finding transactions with GPT-5.6…");
+      setUploadLabel("Finding transactions with Gemini 2.5 Flash…");
       const response = await fetch("/api/categorize", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: file.name, mimeType: file.type, fileData, text }),
@@ -184,7 +184,7 @@ export default function Home() {
       void persistLedger(nextStatement, budgets).catch((error) => notify(error.message, "bad"));
       setSynced(false);
       setView("overview");
-      notify(result.demo ? `${append ? "Receipt" : "Statement"} loaded in demo mode. Add OPENAI_API_KEY for full document intelligence.` : `${result.transactions.length} transactions found and categorized.`);
+      notify(result.demo ? `${append ? "Receipt" : "Statement"} loaded with the safe local fallback. Check Vertex credentials for full document intelligence.` : `${result.transactions.length} transactions found and categorized by ${result.provider === "groq" ? "Groq" : "Gemini"}.`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "We couldn't read that statement.", "bad");
     } finally { setUploading(false); }
@@ -316,7 +316,7 @@ export default function Home() {
 
           <div className="lower-grid">
             <article className="panel recent-panel">
-              <div className="panel-head"><div><p className="eyebrow">FRESHLY SORTED</p><h2>Recent transactions</h2></div><span className="ai-label"><Sparkles size={13}/>GPT-5.6 categorized</span></div>
+              <div className="panel-head"><div><p className="eyebrow">FRESHLY SORTED</p><h2>Recent transactions</h2></div><span className="ai-label"><Sparkles size={13}/>Gemini categorized</span></div>
               <div className="transaction-table compact"><div className="transaction-head"><span>Merchant</span><span>Date</span><span>Category</span><span>Confidence</span><span>Amount</span></div>{currentTransactions.slice(0, 5).map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} onCategory={(category) => updateCategory(transaction.id, category)} />)}</div>
               <button className="full-row-button" onClick={() => setView("transactions")}>View all {statement.transactions.length} transactions <ChevronRight size={15}/></button>
             </article>
@@ -347,7 +347,7 @@ export default function Home() {
         </section>}
       </section>
 
-      <footer><div className="footer-brand"><Mark/><span>Built for OpenAI Build Week · Apps for your life</span></div><div><span>GPT-5.6</span><span>MCP</span><span>Google Sheets</span></div></footer>
+      <footer><div className="footer-brand"><Mark/><span>Built for OpenAI Build Week · Apps for your life</span></div><div><span>Gemini 2.5</span><span>Groq fallback</span><span>MCP</span></div></footer>
 
       <input ref={fileRef} type="file" accept=".pdf,.csv,.tsv,.txt,.xlsx,.xls,image/png,image/jpeg" hidden onChange={(event) => handleFile(event.target.files?.[0])}/>
       <input ref={receiptRef} type="file" accept="image/png,image/jpeg,.pdf" hidden onChange={(event) => handleFile(event.target.files?.[0], true)}/>

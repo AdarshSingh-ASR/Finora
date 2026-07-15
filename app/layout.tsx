@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     "Turn any bank or UPI statement into a clean, explainable money story — then take it to Google Sheets or your AI agent.",
   openGraph: {
     title: "Finora — Your money, finally legible",
-    description: "Statement in. Money story out. Powered by GPT-5.6.",
+    description: "Statement in. Money story out. Powered by Gemini 2.5 Flash with Groq fallback.",
     type: "website",
     images: [{ url: "/og.png", width: 1728, height: 909, alt: "Finora turns a bank statement into a clear money story" }],
   },

@@ -8,7 +8,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 test("MCP exposes composable finance tools and parses bank variants", async () => {
   const dataDir = await mkdtemp(path.join(tmpdir(), "finora-test-"));
-  const env = Object.fromEntries(Object.entries(process.env).filter(([, value]) => value != null)); env.OPENAI_API_KEY = ""; env.FINORA_DATA_DIR = dataDir;
+  const env = Object.fromEntries(Object.entries(process.env).filter(([, value]) => value != null)); delete env.GOOGLE_VERTEX_CREDENTIALS; delete env.GROQ_API_KEY; env.FINORA_DATA_DIR = dataDir;
   const client = new Client({ name: "finora-test", version: "1.0.0" });
   const transport = new StdioClientTransport({ command: "node", args: ["mcp/server.mjs"], cwd: process.cwd(), env });
   await client.connect(transport);
@@ -24,4 +24,3 @@ test("MCP exposes composable finance tools and parses bank variants", async () =
     }
   } finally { await client.close(); await rm(dataDir, { recursive: true, force: true }); }
 });
-
