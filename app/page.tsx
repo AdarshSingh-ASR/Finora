@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   ArrowRight, BadgeCheck, Bot, BrainCircuit, ChartNoAxesCombined, Check,
   FileSpreadsheet, FileUp, Fingerprint, Gauge, MessageCircleQuestion, ReceiptText,
@@ -32,6 +33,15 @@ function FinoraMark() {
 
 export default function LandingPage() {
   const { data: session, isPending } = useSession();
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const updateNav = () => setIsScrolled(window.scrollY > 44);
+    updateNav();
+    window.addEventListener("scroll", updateNav, { passive: true });
+    return () => window.removeEventListener("scroll", updateNav);
+  }, []);
+
   const openFinora = () => {
     if (session?.user) window.location.href = "/dashboard";
     else void signIn.social({ provider: "google", callbackURL: "/dashboard" });
@@ -39,7 +49,7 @@ export default function LandingPage() {
 
   return <main className="landing-shell" id="top">
     <section className="landing-hero">
-      <nav className="landing-nav" aria-label="Main navigation">
+      <nav className={`landing-nav ${isScrolled ? "landing-nav-scrolled" : ""}`} aria-label="Main navigation">
         <a className="landing-brand" href="#top"><FinoraMark/><span>finora</span></a>
         <div className="landing-links"><a href="#how">How it works</a><a href="#intelligence">Intelligence</a><a href="#agents">For agents</a><a href="#privacy">Privacy</a></div>
         <div className="landing-nav-actions"><button className="landing-login" onClick={openFinora} disabled={isPending}>{session?.user ? "Open app" : "Sign in"}</button><button className="landing-nav-cta" onClick={openFinora} disabled={isPending}>Analyze a statement</button></div>
