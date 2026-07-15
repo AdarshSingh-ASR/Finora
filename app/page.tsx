@@ -76,14 +76,6 @@ export default function LandingPage() {
     else void signIn.social({ provider: "google", callbackURL: "/dashboard" });
   };
 
-  const goToStep = (index: number) => {
-    const section = stepsStoryRef.current;
-    if (!section) return;
-    const sectionTop = window.scrollY + section.getBoundingClientRect().top;
-    const scrollable = section.offsetHeight - window.innerHeight;
-    window.scrollTo({ top: sectionTop + scrollable * ((index + .12) / steps.length), behavior: "smooth" });
-  };
-
   return <main className="landing-shell" id="top">
     <section className="landing-hero">
       <nav className={`landing-nav landing-nav-${navPhase}`} aria-label="Main navigation">
@@ -129,20 +121,20 @@ export default function LandingPage() {
         <div className="steps-story-heading"><p><span/>How it works</p><h2>From statement to <em>money clarity</em><br/>in three deliberate moves.</h2></div>
         <div className="steps-story-layout">
           <div className="steps-story-copy" aria-label="Finora workflow steps">
-            {steps.map(({ number, title, body }, index) => <button key={number} className={activeStep === index ? "active" : ""} onClick={() => goToStep(index)} aria-current={activeStep === index ? "step" : undefined}>
+            {steps.map(({ number, title, body }, index) => <div key={number} className={`story-step ${activeStep === index ? "active" : ""}`} aria-current={activeStep === index ? "step" : undefined}>
               <span className="story-step-arrow">↳</span>
-              <span><small>{number}</small><strong>{title}</strong>{activeStep === index && <p>{body}</p>}</span>
-            </button>)}
+              <span><small>{number}</small><strong>{title}</strong><div className="story-step-body"><p>{body}</p></div></span>
+            </div>)}
           </div>
-          <div className="steps-story-card" key={activeStep} aria-live="polite">
-            {activeStep === 0 && <>
+          <div className="steps-story-card" aria-live="polite">
+            <section className={`story-card-panel ${activeStep === 0 ? "active" : ""}`} aria-hidden={activeStep !== 0}>
               <div className="story-card-head"><span><FileUp size={19}/>Statement intake</span><small><i/> Ready</small></div>
-              <button className="story-dropzone" onClick={openFinora}>
+              <button className="story-dropzone" onClick={openFinora} tabIndex={activeStep === 0 ? 0 : -1}>
                 <span><FileUp size={27}/></span><strong>Choose your real statement</strong><p>Bank, card, or UPI—Finora reads the file you already have.</p><div><i>PDF</i><i>CSV</i><i>XLSX</i><i>IMAGE</i></div>
               </button>
               <div className="story-card-foot"><ShieldCheck size={16}/><span><strong>Private by default</strong><small>Raw files are processed in-request and never become inventory.</small></span><ChevronRight size={17}/></div>
-            </>}
-            {activeStep === 1 && <>
+            </section>
+            <section className={`story-card-panel ${activeStep === 1 ? "active" : ""}`} aria-hidden={activeStep !== 1}>
               <div className="story-card-head"><span><WandSparkles size={19}/>Explainable ledger</span><small><i/> Reviewable</small></div>
               <div className="story-review-list">
                 <article><span><CircleCheck size={17}/></span><div><strong>Normalize merchant names</strong><small>Original narration remains attached as evidence</small></div><b>Ready</b></article>
@@ -150,16 +142,16 @@ export default function LandingPage() {
                 <article><span><CircleCheck size={17}/></span><div><strong>Categorize with confidence</strong><small>Reasons and low-confidence rows remain editable</small></div><b>Review</b></article>
               </div>
               <div className="story-card-foot"><Fingerprint size={16}/><span><strong>No guessed totals</strong><small>Your ledger stays empty until a real statement is analyzed.</small></span></div>
-            </>}
-            {activeStep === 2 && <>
+            </section>
+            <section className={`story-card-panel ${activeStep === 2 ? "active" : ""}`} aria-hidden={activeStep !== 2}>
               <div className="story-card-head"><span><Database size={19}/>Your money memory</span><small><i/> Connected</small></div>
               <div className="story-destinations">
-                <button onClick={openFinora}><span><MessageCircleQuestion size={19}/></span><div><strong>Ask Finora</strong><small>Evidence-backed answers from your transactions</small></div><ChevronRight size={17}/></button>
-                <button onClick={openFinora}><span><FileSpreadsheet size={19}/></span><div><strong>Google Sheets</strong><small>Summaries and charts after you confirm the ledger</small></div><ChevronRight size={17}/></button>
-                <a href="#agents"><span><Bot size={19}/></span><div><strong>MCP tools</strong><small>Parse, categorize, analyze, or sync independently</small></div><ChevronRight size={17}/></a>
+                <button onClick={openFinora} tabIndex={activeStep === 2 ? 0 : -1}><span><MessageCircleQuestion size={19}/></span><div><strong>Ask Finora</strong><small>Evidence-backed answers from your transactions</small></div><ChevronRight size={17}/></button>
+                <button onClick={openFinora} tabIndex={activeStep === 2 ? 0 : -1}><span><FileSpreadsheet size={19}/></span><div><strong>Google Sheets</strong><small>Summaries and charts after you confirm the ledger</small></div><ChevronRight size={17}/></button>
+                <a href="#agents" tabIndex={activeStep === 2 ? 0 : -1}><span><Bot size={19}/></span><div><strong>MCP tools</strong><small>Parse, categorize, analyze, or sync independently</small></div><ChevronRight size={17}/></a>
               </div>
               <div className="story-card-foot"><ShieldCheck size={16}/><span><strong>You stay in control</strong><small>Nothing syncs or exports until you ask.</small></span></div>
-            </>}
+            </section>
           </div>
         </div>
         <div className="steps-story-progress" aria-hidden="true"><span style={{ width: `${((activeStep + 1) / steps.length) * 100}%` }}/></div>
