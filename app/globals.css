@@ -35,6 +35,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
 .icon-button, .avatar, .menu-button { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 10px; text-decoration: none; }
 .avatar { border: 0; border-radius: 50%; background: var(--ink); color: white; font-size: 11px; font-weight: 700; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.sign-in-button { height: 36px; border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 0 12px; display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 10px; font-weight: 700; }
 .sheet-button { height: 38px; display: inline-flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid #b8b9af; background: var(--card); border-radius: 10px; font-size: 12px; font-weight: 700; }
 .sheet-button:hover { background: white; border-color: #91938a; }
 .menu-button { display: none; }
@@ -147,6 +149,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .weekly-facts small { color: #969a8e; font-size: 8px; }
 .weekly-facts strong { font-size: 9px; text-align: right; }
 .weekly-panel > p { color: var(--acid); font-family: Georgia, serif; font-style: italic; font-size: 11px; line-height: 1.5; margin: 15px 0 0; }
+.weekly-email-button { width: 100%; border: 1px solid #3c4234; background: #252a21; color: #f1f3eb; border-radius: 10px; margin-top: 17px; min-height: 39px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 10px; font-weight: 700; }
+.weekly-email-button:hover { border-color: var(--acid); color: var(--acid); }
 .recent-panel { overflow: hidden; }
 .ai-label { display: inline-flex; align-items: center; gap: 5px; background: #edf0ff; color: var(--blue); border-radius: 20px; padding: 5px 8px; font-size: 9px; font-weight: 700; }
 .transaction-table { width: 100%; }
@@ -250,6 +254,19 @@ footer > div:last-child span { border: 1px solid #d5d6cd; border-radius: 20px; p
 .modal code { font: 9px var(--font-geist-mono); }
 .modal-action { width: 100%; min-height: 44px; border: 0; background: var(--ink); color: white; border-radius: 11px; margin-top: 15px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 11px; font-weight: 700; }
 .privacy-note { display: flex; align-items: center; justify-content: center; gap: 5px; color: #92948a; font-size: 8px; margin-top: 11px; }
+.account-modal { overflow: hidden; }
+.account-person { display: flex; align-items: center; gap: 14px; padding-right: 38px; }
+.account-person > img, .account-person > span { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--ink); color: white; flex: 0 0 auto; }
+.account-person h2 { font-size: 24px; line-height: 1.05; margin: 3px 0 4px; }
+.account-person small { color: var(--muted); font-size: 10px; }
+.report-setting { display: grid; grid-template-columns: 49px 1fr; gap: 13px; align-items: start; margin: 25px 0 18px; padding: 18px; background: #f3f4ed; border-radius: 14px; }
+.report-setting .modal-icon { margin: 0; background: var(--ink); color: var(--acid); }
+.report-setting h3 { font-size: 14px; margin: 2px 0 6px; }
+.report-setting p { color: var(--muted); font-size: 10px; line-height: 1.55; margin: 0; }
+.account-modal label select { display: block; width: 100%; margin-top: 7px; border: 1px solid var(--line); border-radius: 10px; background: #f8f8f3; min-height: 43px; padding: 0 12px; font-size: 11px; }
+.report-off { background: #fff4f2; color: #a83d31; border: 1px solid #eccac5; }
+.sign-out-link { margin: 18px auto 0; border: 0; background: transparent; color: #777970; display: flex; align-items: center; gap: 6px; font-size: 10px; }
+.account-loading { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255,255,255,.72); backdrop-filter: blur(2px); }
 .toast { position: fixed; right: 22px; bottom: 22px; z-index: 70; max-width: 420px; display: flex; align-items: center; gap: 10px; padding: 11px 14px 11px 11px; background: var(--ink); color: white; border-radius: 12px; box-shadow: 0 16px 50px rgba(0,0,0,.25); font-size: 11px; animation: toast-in .25s ease-out; }
 .toast > span { width: 25px; height: 25px; display: grid; place-items: center; background: var(--green); border-radius: 8px; }
 .toast.bad > span { background: #d74444; }
@@ -276,6 +293,8 @@ footer > div:last-child span { border: 1px solid #d5d6cd; border-radius: 20px; p
   .main-nav button svg { display: block; }
   .menu-button { display: grid; }
   .hide-mobile, .avatar { display: none; }
+  .sign-in-button span { display: none; }
+  .sign-in-button { width: 38px; padding: 0; justify-content: center; }
   .sheet-button span { display: none; }
   .sheet-button { width: 38px; padding: 0; justify-content: center; }
   .content-wrap { padding: 38px 16px 60px; }

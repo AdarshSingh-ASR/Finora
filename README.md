@@ -29,6 +29,42 @@ Open the printed local URL. The app starts with realistic demo data. Upload [`sa
 
 Add `OPENAI_API_KEY` to `.env.local` to enable GPT-5.6 parsing for PDFs, scanned statements, screenshots, and unfamiliar formats. The default model is `gpt-5.6` and can be changed with `OPENAI_MODEL`.
 
+## Google sign-in and weekly Gmail reports
+
+Finora uses Better Auth with Google OAuth. A signed-in user's corrected ledger, budgets, and report preference are stored in D1 under that user's ID. Gmail access is requested separately and only when the user enables the Sunday report; the requested scope can send mail but cannot read the inbox.
+
+### Credentials to add
+
+```env
+BETTER_AUTH_SECRET=generate-a-random-32-byte-secret
+BETTER_AUTH_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=your-web-oauth-client.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
+CRON_SECRET=another-long-random-secret
+```
+
+Create them step by step:
+
+1. Generate the two secrets. In PowerShell, run `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` twice. Use one value for `BETTER_AUTH_SECRET` and the other for `CRON_SECRET`.
+2. Open [Google Cloud Console](https://console.cloud.google.com/), create or select a project, then open **APIs & Services → Library** and enable **Gmail API**.
+3. Open **Google Auth Platform → Branding**, configure the app name, support email, and developer contact. For hackathon testing, keep the app in testing and add each judge/demo Google account under **Audience → Test users**.
+4. Under **Data Access**, add the basic identity scopes (`openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`) and `https://www.googleapis.com/auth/gmail.send`. A public production launch may require Google's OAuth verification for the Gmail scope.
+5. Open **Clients → Create client → Web application**. Add `http://localhost:3000` as an authorized JavaScript origin.
+6. Add `http://localhost:3000/api/auth/callback/google` as an authorized redirect URI. For the deployed site, also add `https://YOUR-DOMAIN/api/auth/callback/google` and use `https://YOUR-DOMAIN` for `BETTER_AUTH_URL` in that environment.
+7. Copy the client ID and client secret into `.env.local`, run `npm run db:migrate:local` once, then restart `npm run dev`.
+
+Google only returns a durable refresh token during an offline consent flow. Finora configures Better Auth with `accessType: "offline"` and a consent prompt, and Better Auth encrypts OAuth tokens before storing them.
+
+### Run weekly delivery
+
+`POST /api/reports/weekly` is protected by `CRON_SECRET`. The included Worker scheduler invokes it hourly; Finora sends at 8:00 AM Sunday in each opted-in user's timezone and suppresses repeat sends for six days. To test immediately:
+
+```powershell
+Invoke-RestMethod -Method Post -Headers @{ Authorization = "Bearer $env:CRON_SECRET" } -Uri "http://localhost:3000/api/reports/weekly?force=1"
+```
+
+The D1 schema and migration are in [`db/schema.ts`](db/schema.ts) and [`drizzle/0000_icy_thena.sql`](drizzle/0000_icy_thena.sql).
+
 ## Use it from Codex through MCP
 
 The repository includes `.codex/config.toml`; from this project, restart Codex so the `finora` MCP server is discovered. Or add it manually:
@@ -93,6 +129,8 @@ The web endpoint uses Responses API file inputs for PDFs/images and Structured O
 - No statement content is logged.
 - API keys stay server-side.
 - Raw uploads are processed in-request and are not persisted by the web demo.
+- Signed-in users explicitly persist only the normalized ledger and budgets; raw statement files are never stored.
+- Better Auth encrypts Google access and refresh tokens at rest in D1.
 - MCP data is local in `.finora/ledger.json`.
 - Confidence and explanations are first-class; the UI never hides uncertainty.
 - Finora is an information tool, not financial, investment, tax, or legal advice.

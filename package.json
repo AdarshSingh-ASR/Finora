@@ -13,10 +13,13 @@
     "mcp:inspect": "npx @modelcontextprotocol/inspector node mcp/server.mjs",
     "test": "npm run build && node --test tests/rendered-html.test.mjs tests/mcp-composable.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local"
   },
   "dependencies": {
+    "@better-auth/drizzle-adapter": "^1.6.23",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-auth": "^1.6.23",
     "cross-env": "^10.1.0",
     "drizzle-orm": "0.45.2",
     "lucide-react": "^1.24.0",

@@ -12,6 +12,8 @@ interface Env {
       };
     };
   };
+  CRON_SECRET?: string;
+  BETTER_AUTH_URL?: string;
 }
 
 interface ExecutionContext {
@@ -41,6 +43,13 @@ const worker = {
     }
 
     return handler.fetch(request, env, ctx);
+  },
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    if (!env.CRON_SECRET || !env.BETTER_AUTH_URL) return;
+    ctx.waitUntil(handler.fetch(new Request(`${env.BETTER_AUTH_URL}/api/reports/weekly`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.CRON_SECRET}` },
+    }), env, ctx));
   },
 };
 

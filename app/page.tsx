@@ -1,16 +1,17 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AlertCircle, ArrowDownLeft, ArrowUpRight, BadgeCheck, Bot, CalendarDays,
-  Camera, Check, ChevronRight, CircleHelp, Cloud, CopyCheck, Download, FileSpreadsheet,
+  Camera, Check, ChevronRight, CircleHelp, Cloud, CopyCheck, FileSpreadsheet,
   FileText, Gauge, LayoutDashboard, LoaderCircle, LockKeyhole, Menu, MoreHorizontal,
   ReceiptIndianRupee, Repeat2, Search, Settings2, ShieldCheck, Sparkles, UploadCloud,
-  WalletCards, X, Zap,
+  X, Zap, LogOut, Mail, UserRound,
 } from "lucide-react";
 import { answerFinanceQuestion, budgetStatus, categories, compareMonths, defaultBudgets, detectAnomalies, detectSubscriptions, financialHealthScore, findDuplicateTransactions, inPeriod, latestPeriod, money, summarize, weeklyReport } from "../lib/finance";
 import { categoryColors, sampleStatement } from "../lib/sample-data";
 import type { Budget, Category, StatementResult, Transaction } from "../lib/types";
+import { authClient, signIn, signOut, useSession } from "../lib/auth-client";
 
 type View = "overview" | "transactions" | "agent";
 type Toast = { tone: "good" | "bad"; message: string } | null;
@@ -61,6 +62,7 @@ function TransactionRow({ transaction, onCategory }: { transaction: Transaction;
 }
 
 export default function Home() {
+  const { data: session, isPending: sessionPending } = useSession();
   const [view, setView] = useState<View>("overview");
   const [statement, setStatement] = useState<StatementResult>(sampleStatement);
   const [uploading, setUploading] = useState(false);
@@ -74,6 +76,10 @@ export default function Home() {
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(false);
+  const [reportTimezone, setReportTimezone] = useState("Asia/Kolkata");
+  const [accountLoading, setAccountLoading] = useState(false);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("Ask about a merchant, category, recurring charge, or how much is safe to spend.");
   const [asking, setAsking] = useState(false);
@@ -94,9 +100,55 @@ export default function Home() {
   const week = useMemo(() => weeklyReport(statement.transactions), [statement]);
   const visibleTransactions = statement.transactions.filter((transaction) => `${transaction.merchant} ${transaction.description} ${transaction.category}`.toLowerCase().includes(search.toLowerCase()));
 
+  useEffect(() => {
+    if (!session?.user) return;
+    let cancelled = false;
+    fetch("/api/account").then(async (response) => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not load your account.");
+      if (cancelled) return;
+      if (result.ledger?.statement) setStatement(result.ledger.statement);
+      if (result.ledger?.budgets) setBudgets(result.ledger.budgets);
+      setWeeklyEmailEnabled(Boolean(result.preferences?.weeklyEmailEnabled));
+      setReportTimezone(result.preferences?.timezone || "Asia/Kolkata");
+    }).catch((error) => !cancelled && notify(error instanceof Error ? error.message : "Could not load your account.", "bad"))
+      .finally(() => !cancelled && setAccountLoading(false));
+    return () => { cancelled = true; };
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user || new URLSearchParams(window.location.search).get("gmail") !== "connected") return;
+    window.history.replaceState({}, "", window.location.pathname);
+    void savePreferences(true, reportTimezone).then(() => notify("Weekly Gmail report enabled. Your first report will arrive Sunday."));
+  }, [session?.user?.id]);
+
   function notify(message: string, tone: "good" | "bad" = "good") {
     setToast({ message, tone });
     window.setTimeout(() => setToast(null), 4200);
+  }
+
+  async function persistLedger(nextStatement: StatementResult, nextBudgets: Budget[]) {
+    if (!session?.user) return;
+    const response = await fetch("/api/account", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ statement: nextStatement, budgets: nextBudgets }) });
+    if (!response.ok) throw new Error("Your changes are visible here, but could not be saved to your account.");
+  }
+
+  async function savePreferences(enabled: boolean, timezone = reportTimezone) {
+    const response = await fetch("/api/account", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferences: { weeklyEmailEnabled: enabled, timezone } }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not update report settings.");
+    setWeeklyEmailEnabled(enabled);
+    setReportTimezone(timezone);
+  }
+
+  async function enableWeeklyEmail() {
+    if (!session?.user) return signIn.social({ provider: "google", callbackURL: "/" });
+    await authClient.linkSocial({ provider: "google", scopes: ["https://www.googleapis.com/auth/gmail.send"], callbackURL: "/?gmail=connected" });
+  }
+
+  async function disableWeeklyEmail() {
+    try { await savePreferences(false); notify("Weekly Gmail reports are off."); }
+    catch (error) { notify(error instanceof Error ? error.message : "Could not update report settings.", "bad"); }
   }
 
   async function handleFile(file?: File, append = false) {
@@ -127,7 +179,9 @@ export default function Home() {
       });
       const result = await response.json();
       if (!response.ok || result.error) throw new Error(result.error || "Statement analysis failed.");
-      setStatement((current) => append ? { ...current, transactions: [...result.transactions, ...current.transactions], insights: [`Added ${result.transactions.length} receipt transaction${result.transactions.length === 1 ? "" : "s"}.`, ...current.insights.slice(0, 2)] } : result);
+      const nextStatement = append ? { ...statement, transactions: [...result.transactions, ...statement.transactions], insights: [`Added ${result.transactions.length} receipt transaction${result.transactions.length === 1 ? "" : "s"}.`, ...statement.insights.slice(0, 2)] } : result;
+      setStatement(nextStatement);
+      void persistLedger(nextStatement, budgets).catch((error) => notify(error.message, "bad"));
       setSynced(false);
       setView("overview");
       notify(result.demo ? `${append ? "Receipt" : "Statement"} loaded in demo mode. Add OPENAI_API_KEY for full document intelligence.` : `${result.transactions.length} transactions found and categorized.`);
@@ -137,7 +191,9 @@ export default function Home() {
   }
 
   function updateCategory(id: string, category: Category) {
-    setStatement((current) => ({ ...current, transactions: current.transactions.map((transaction) => transaction.id === id ? { ...transaction, category, confidence: 1, explanation: "Category confirmed by you." } : transaction) }));
+    const nextStatement = { ...statement, transactions: statement.transactions.map((transaction) => transaction.id === id ? { ...transaction, category, confidence: 1, explanation: "Category confirmed by you." } : transaction) };
+    setStatement(nextStatement);
+    void persistLedger(nextStatement, budgets).catch((error) => notify(error.message, "bad"));
     setSynced(false);
   }
 
@@ -192,7 +248,7 @@ export default function Home() {
         </nav>
         <div className="top-actions">
           <button className="sheet-button" onClick={() => setSheetOpen(true)}>{synced ? <Check size={15}/> : <FileSpreadsheet size={16}/>}<span>{synced ? "Synced" : "Sync Sheets"}</span></button>
-          <button className="avatar" aria-label="Account menu">AK</button>
+          {session?.user ? <button className="avatar" onClick={() => setAccountOpen(true)} aria-label="Account menu" title={session.user.email}>{session.user.image ? <img src={session.user.image} alt=""/> : session.user.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</button> : <button className="sign-in-button" onClick={() => signIn.social({ provider: "google", callbackURL: "/" })} disabled={sessionPending}><UserRound size={15}/><span>Sign in</span></button>}
           <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Open menu"><Menu size={20}/></button>
         </div>
       </header>
@@ -215,7 +271,7 @@ export default function Home() {
             <article className="panel category-panel">
               <div className="panel-head"><div><p className="eyebrow">WHERE IT WENT</p><h2>Spend by category</h2></div><button className="ghost-button" onClick={() => setView("transactions")}>See all <ChevronRight size={15}/></button></div>
               <div className="category-story">
-                <div className="donut" style={{ background: `conic-gradient(${categoryEntries.map(([category, value], index) => { const before = categoryEntries.slice(0, index).reduce((a, [, n]) => a + n, 0) / summary.spend * 100; const after = (categoryEntries.slice(0, index + 1).reduce((a, [, n]) => a + n, 0) / summary.spend) * 100; return `${categoryColors[category] || "#aaa"} ${before}% ${after}%`; }).join(",")})` }}><div><strong>{money(summary.spend)}</strong><span>total spent</span></div></div>
+                <div className="donut" style={{ background: `conic-gradient(${categoryEntries.map(([category], index) => { const before = categoryEntries.slice(0, index).reduce((a, [, n]) => a + n, 0) / summary.spend * 100; const after = (categoryEntries.slice(0, index + 1).reduce((a, [, n]) => a + n, 0) / summary.spend) * 100; return `${categoryColors[category] || "#aaa"} ${before}% ${after}%`; }).join(",")})` }}><div><strong>{money(summary.spend)}</strong><span>total spent</span></div></div>
                 <div className="category-list">{categoryEntries.slice(0, 6).map(([category, value]) => <div key={category}><span><i style={{ background: categoryColors[category] }}/>{category}</span><strong>{money(value)}</strong><div><i style={{ width: `${(value / (categoryEntries[0]?.[1] || 1)) * 100}%`, background: categoryColors[category] }}/></div></div>)}</div>
               </div>
             </article>
@@ -248,12 +304,13 @@ export default function Home() {
           <div className="planning-grid">
             <article className="panel budget-panel">
               <div className="panel-head"><div><p className="eyebrow">BUDGET PULSE</p><h2>Stay ahead, category by category</h2></div><span className="ai-label">Editable limits</span></div>
-              <div className="budget-list">{budgetStatuses.map((item, index) => <div className={`budget-row ${item.status}`} key={item.category}><div><strong>{item.category}</strong><span>{money(item.spent)} of <label>₹<input type="number" value={budgets[index]?.limit || 0} onChange={(event) => setBudgets((current) => current.map((budget, budgetIndex) => budgetIndex === index ? { ...budget, limit: Number(event.target.value) } : budget))}/></label></span></div><div className="budget-track"><i style={{ width: `${Math.min(100, item.usedPercent)}%` }}/></div><strong>{item.usedPercent.toFixed(0)}%</strong></div>)}</div>
+              <div className="budget-list">{budgetStatuses.map((item, index) => <div className={`budget-row ${item.status}`} key={item.category}><div><strong>{item.category}</strong><span>{money(item.spent)} of <label>₹<input type="number" value={budgets[index]?.limit || 0} onChange={(event) => { const next = budgets.map((budget, budgetIndex) => budgetIndex === index ? { ...budget, limit: Number(event.target.value) } : budget); setBudgets(next); void persistLedger(statement, next).catch((error) => notify(error.message, "bad")); }}/></label></span></div><div className="budget-track"><i style={{ width: `${Math.min(100, item.usedPercent)}%` }}/></div><strong>{item.usedPercent.toFixed(0)}%</strong></div>)}</div>
             </article>
             <article className="panel weekly-panel">
               <div className="feature-head"><span><CalendarDays size={18}/></span><div><p className="eyebrow">WEEKLY AI REPORT</p><h2>{money(week.spent)} spent</h2></div></div>
               <div className="weekly-facts"><span><small>Largest category</small><strong>{week.topCategory}</strong></span><span><small>Largest merchant</small><strong>{week.topMerchant}</strong></span><span><small>Biggest expense</small><strong>{week.largestExpense ? `${week.largestExpense.merchant} · ${money(week.largestExpense.amount)}` : "None"}</strong></span></div>
               <p>{week.suggestion}</p>
+              <button className="weekly-email-button" onClick={() => session?.user ? setAccountOpen(true) : signIn.social({ provider: "google", callbackURL: "/" })}><Mail size={15}/>{weeklyEmailEnabled ? "Weekly Gmail report is on" : "Get this in Gmail every Sunday"}</button>
             </article>
           </div>
 
@@ -300,6 +357,17 @@ export default function Home() {
         <details><summary>How do I get this URL?</summary><ol><li>Open the included <code>integrations/google-sheets/Code.gs</code>.</li><li>Paste it into a new Apps Script project.</li><li>Deploy as a web app, then paste its URL here.</li></ol></details>
         <button className="modal-action" onClick={syncSheets} disabled={syncing}>{syncing ? <><LoaderCircle className="spin" size={17}/>Building your sheet…</> : <><Cloud size={17}/>Create report in Google Sheets</>}</button>
         <small className="privacy-note"><LockKeyhole size={12}/>Data goes only to the Apps Script URL you provide.</small>
+      </div></div>}
+
+      {accountOpen && session?.user && <div className="modal-backdrop" onMouseDown={() => setAccountOpen(false)}><div className="modal account-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <button className="modal-close" onClick={() => setAccountOpen(false)}><X size={18}/></button>
+        <div className="account-person">{session.user.image ? <img src={session.user.image} alt=""/> : <span><UserRound size={22}/></span>}<div><p className="eyebrow">FINORA ACCOUNT</p><h2>{session.user.name}</h2><small>{session.user.email}</small></div></div>
+        <div className="report-setting"><span className="modal-icon"><Mail size={22}/></span><div><h3>Sunday money story</h3><p>Finora sends your weekly spend, largest category, health score, subscriptions, and one useful suggestion to this Gmail address.</p></div></div>
+        <label>Report timezone<select value={reportTimezone} onChange={(event) => { setReportTimezone(event.target.value); if (weeklyEmailEnabled) void savePreferences(true, event.target.value); }}><option value="Asia/Kolkata">India · Asia/Kolkata</option><option value="America/New_York">US · New York</option><option value="America/Los_Angeles">US · Los Angeles</option><option value="Europe/London">UK · London</option><option value="Asia/Singapore">Singapore</option></select></label>
+        {weeklyEmailEnabled ? <button className="modal-action report-off" onClick={disableWeeklyEmail}><Mail size={16}/>Turn off weekly email</button> : <button className="modal-action" onClick={enableWeeklyEmail}><Mail size={16}/>Allow Gmail & enable report</button>}
+        <small className="privacy-note"><ShieldCheck size={12}/>Finora can send this report, but cannot read your inbox.</small>
+        <button className="sign-out-link" onClick={() => { setAccountOpen(false); signOut(); }}><LogOut size={15}/>Sign out</button>
+        {accountLoading && <div className="account-loading"><LoaderCircle className="spin" size={18}/></div>}
       </div></div>}
 
       {toast && <div className={`toast ${toast.tone}`}><span>{toast.tone === "good" ? <Check size={15}/> : <AlertCircle size={15}/>}</span>{toast.message}</div>}

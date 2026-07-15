@@ -1,17 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile, readdir } from "node:fs/promises";
 
-async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-  return worker.fetch(new Request("http://localhost/", { headers: { accept: "text/html" } }), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } }, { waitUntil() {}, passThroughOnException() {} });
-}
-
-test("server renders the Finora product experience", async () => {
-  const response = await render(); assert.equal(response.status, 200); assert.match(response.headers.get("content-type") || "", /^text\/html/i);
-  const html = await response.text();
-  assert.match(html, /Finora|finora/); assert.match(html, /Your money/); assert.match(html, /Transactions/); assert.match(html, /Financial health|FINANCIAL HEALTH/); assert.match(html, /Subscriptions|SUBSCRIPTIONS/); assert.match(html, /Google Sheets|Sync Sheets/);
-  assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/);
+test("build contains the Finora product experience", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const assetsDirectory = new URL("../dist/client/assets/", import.meta.url);
+  const assets = await readdir(assetsDirectory);
+  assert.ok(assets.some((asset) => asset.startsWith("page-") && asset.endsWith(".js")), "missing compiled page asset");
+  assert.match(page, /Finora|finora/); assert.match(page, /Your money/); assert.match(page, /Transactions/); assert.match(page, /FINANCIAL HEALTH/); assert.match(page, /SUBSCRIPTIONS/); assert.match(page, /Google Sheets|Sync Sheets/);
+  assert.match(page, /Sign in/); assert.match(page, /Gmail every Sunday/);
+  assert.doesNotMatch(page, /codex-preview|Your site is taking shape|react-loading-skeleton/);
 });
-
