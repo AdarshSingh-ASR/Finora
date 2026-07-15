@@ -1,0 +1,7 @@
+[mcp_servers.finora]
+command = "node"
+args = ["mcp/server.mjs"]
+
+[mcp_servers.finora.env]
+FINORA_DATA_DIR = ".finora"
+

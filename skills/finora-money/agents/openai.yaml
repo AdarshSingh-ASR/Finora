@@ -1,0 +1,11 @@
+interface:
+  display_name: "Finora Money"
+  short_description: "Turn bank statements into an agent-ready ledger"
+  default_prompt: "Use $finora-money to import this bank statement and explain where my money went."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "finora"
+      description: "Local Finora statement and ledger tools"
+      transport: "stdio"
