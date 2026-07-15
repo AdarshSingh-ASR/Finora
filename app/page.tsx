@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight, BadgeCheck, Bot, BrainCircuit, ChartNoAxesCombined, Check,
-  FileSpreadsheet, FileUp, Fingerprint, Gauge, MessageCircleQuestion, ReceiptText,
-  Repeat2, ScanSearch, ShieldCheck, Sparkles, WandSparkles,
+  ChevronRight, CircleCheck, Database, FileSpreadsheet, FileUp, Fingerprint, Gauge,
+  MessageCircleQuestion, ReceiptText, Repeat2, ScanSearch, ShieldCheck, Sparkles,
+  WandSparkles,
 } from "lucide-react";
 import { signIn, useSession } from "../lib/auth-client";
 
@@ -19,9 +20,9 @@ const inputFormats = [
 ];
 
 const steps = [
-  { number: "01", icon: FileUp, title: "Bring the statement you already have", body: "Upload a bank, card, or UPI statement. Finora reads native files and scans without asking you to rebuild your financial life by hand." },
-  { number: "02", icon: WandSparkles, title: "Get a ledger you can actually trust", body: "Merchants are cleaned, transfers are separated from spend, and every category carries a confidence score and a plain-language reason." },
-  { number: "03", icon: BrainCircuit, title: "Use your money memory everywhere", body: "Ask natural-language questions, sync a living Google Sheets dashboard, or let any MCP-compatible agent use focused finance tools." },
+  { number: "01", title: "Bring your statement", body: "Upload the bank, card, or UPI file you already have. Finora starts with your data—never a sample ledger." },
+  { number: "02", title: "Make every row trustworthy", body: "Merchants are cleaned, transfers are separated from spend, and uncertain categories stay reviewable." },
+  { number: "03", title: "Put your money memory to work", body: "Ask questions, build your Google Sheets dashboard, or give an agent one focused MCP tool at a time." },
 ];
 
 const capabilities = [
@@ -42,6 +43,8 @@ function FinoraMark() {
 export default function LandingPage() {
   const { data: session, isPending } = useSession();
   const [navPhase, setNavPhase] = useState<"top" | "compact" | "floating">("top");
+  const [activeStep, setActiveStep] = useState(0);
+  const stepsStoryRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const updateNav = () => {
@@ -54,9 +57,31 @@ export default function LandingPage() {
     return () => { window.removeEventListener("scroll", updateNav); window.removeEventListener("resize", updateNav); };
   }, []);
 
+  useEffect(() => {
+    const updateStep = () => {
+      const section = stepsStoryRef.current;
+      if (!section) return;
+      const scrollable = Math.max(1, section.offsetHeight - window.innerHeight);
+      const progress = Math.min(0.999, Math.max(0, -section.getBoundingClientRect().top / scrollable));
+      setActiveStep(Math.min(steps.length - 1, Math.floor(progress * steps.length)));
+    };
+    updateStep();
+    window.addEventListener("scroll", updateStep, { passive: true });
+    window.addEventListener("resize", updateStep);
+    return () => { window.removeEventListener("scroll", updateStep); window.removeEventListener("resize", updateStep); };
+  }, []);
+
   const openFinora = () => {
     if (session?.user) window.location.href = "/dashboard";
     else void signIn.social({ provider: "google", callbackURL: "/dashboard" });
+  };
+
+  const goToStep = (index: number) => {
+    const section = stepsStoryRef.current;
+    if (!section) return;
+    const sectionTop = window.scrollY + section.getBoundingClientRect().top;
+    const scrollable = section.offsetHeight - window.innerHeight;
+    window.scrollTo({ top: sectionTop + scrollable * ((index + .12) / steps.length), behavior: "smooth" });
   };
 
   return <main className="landing-shell" id="top">
@@ -99,9 +124,46 @@ export default function LandingPage() {
       </div>
     </section>
 
-    <section className="landing-section steps-section" id="how">
-      <div className="landing-section-head"><p>How it works</p><h2>From statement to<br/><em>money clarity</em> in three moves.</h2></div>
-      <div className="steps-grid">{steps.map(({ number, icon: Icon, title, body }) => <article key={number}><span className="step-number">{number}</span><span className="step-icon"><Icon size={22}/></span><h3>{title}</h3><p>{body}</p></article>)}</div>
+    <section className="steps-story" id="how" ref={stepsStoryRef}>
+      <div className="steps-story-frame">
+        <div className="steps-story-heading"><p><span/>How it works</p><h2>From statement to <em>money clarity</em><br/>in three deliberate moves.</h2></div>
+        <div className="steps-story-layout">
+          <div className="steps-story-copy" aria-label="Finora workflow steps">
+            {steps.map(({ number, title, body }, index) => <button key={number} className={activeStep === index ? "active" : ""} onClick={() => goToStep(index)} aria-current={activeStep === index ? "step" : undefined}>
+              <span className="story-step-arrow">↳</span>
+              <span><small>{number}</small><strong>{title}</strong>{activeStep === index && <p>{body}</p>}</span>
+            </button>)}
+          </div>
+          <div className="steps-story-card" key={activeStep} aria-live="polite">
+            {activeStep === 0 && <>
+              <div className="story-card-head"><span><FileUp size={19}/>Statement intake</span><small><i/> Ready</small></div>
+              <button className="story-dropzone" onClick={openFinora}>
+                <span><FileUp size={27}/></span><strong>Choose your real statement</strong><p>Bank, card, or UPI—Finora reads the file you already have.</p><div><i>PDF</i><i>CSV</i><i>XLSX</i><i>IMAGE</i></div>
+              </button>
+              <div className="story-card-foot"><ShieldCheck size={16}/><span><strong>Private by default</strong><small>Raw files are processed in-request and never become inventory.</small></span><ChevronRight size={17}/></div>
+            </>}
+            {activeStep === 1 && <>
+              <div className="story-card-head"><span><WandSparkles size={19}/>Explainable ledger</span><small><i/> Reviewable</small></div>
+              <div className="story-review-list">
+                <article><span><CircleCheck size={17}/></span><div><strong>Normalize merchant names</strong><small>Original narration remains attached as evidence</small></div><b>Ready</b></article>
+                <article><span><CircleCheck size={17}/></span><div><strong>Separate UPI transfers</strong><small>P2P repayments stay distinct from real spend</small></div><b>Ready</b></article>
+                <article><span><CircleCheck size={17}/></span><div><strong>Categorize with confidence</strong><small>Reasons and low-confidence rows remain editable</small></div><b>Review</b></article>
+              </div>
+              <div className="story-card-foot"><Fingerprint size={16}/><span><strong>No guessed totals</strong><small>Your ledger stays empty until a real statement is analyzed.</small></span></div>
+            </>}
+            {activeStep === 2 && <>
+              <div className="story-card-head"><span><Database size={19}/>Your money memory</span><small><i/> Connected</small></div>
+              <div className="story-destinations">
+                <button onClick={openFinora}><span><MessageCircleQuestion size={19}/></span><div><strong>Ask Finora</strong><small>Evidence-backed answers from your transactions</small></div><ChevronRight size={17}/></button>
+                <button onClick={openFinora}><span><FileSpreadsheet size={19}/></span><div><strong>Google Sheets</strong><small>Summaries and charts after you confirm the ledger</small></div><ChevronRight size={17}/></button>
+                <a href="#agents"><span><Bot size={19}/></span><div><strong>MCP tools</strong><small>Parse, categorize, analyze, or sync independently</small></div><ChevronRight size={17}/></a>
+              </div>
+              <div className="story-card-foot"><ShieldCheck size={16}/><span><strong>You stay in control</strong><small>Nothing syncs or exports until you ask.</small></span></div>
+            </>}
+          </div>
+        </div>
+        <div className="steps-story-progress" aria-hidden="true"><span style={{ width: `${((activeStep + 1) / steps.length) * 100}%` }}/></div>
+      </div>
     </section>
 
     <section className="intelligence-section" id="intelligence">
