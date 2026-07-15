@@ -8,7 +8,15 @@ import {
 } from "lucide-react";
 import { signIn, useSession } from "../lib/auth-client";
 
-const inputFormats = ["PDF statements", "CSV exports", "Excel files", "Screenshots", "UPI history", "Credit cards", "Any bank"];
+const inputFormats = [
+  { label: "Bank account statement", tag: "PDF" },
+  { label: "UPI payment history", tag: "UPI" },
+  { label: "Card statement", tag: "PDF" },
+  { label: "Transaction export", tag: "CSV" },
+  { label: "Workbook statement", tag: "XLSX" },
+  { label: "Receipt or screenshot", tag: "OCR" },
+  { label: "Any bank format", tag: "AI" },
+];
 
 const steps = [
   { number: "01", icon: FileUp, title: "Bring the statement you already have", body: "Upload a bank, card, or UPI statement. Finora reads native files and scans without asking you to rebuild your financial life by hand." },
@@ -83,7 +91,13 @@ export default function LandingPage() {
       </div>
     </section>
 
-    <section className="format-marquee" aria-label="Supported inputs"><p>ONE FINANCIAL MEMORY FROM THE FILES YOU ALREADY HAVE</p><div><span>{inputFormats.map((format) => <i key={format}>{format}<b>✦</b></i>)}</span><span aria-hidden="true">{inputFormats.map((format) => <i key={format}>{format}<b>✦</b></i>)}</span></div></section>
+    <section className="format-marquee" aria-label="Supported inputs">
+      <p>ONE FINANCIAL MEMORY FROM THE FILES YOU ALREADY HAVE</p>
+      <div>
+        <span>{inputFormats.map(({ label, tag }) => <i key={`${label}-${tag}`}><span>{label}</span><b>{tag}</b></i>)}</span>
+        <span aria-hidden="true">{inputFormats.map(({ label, tag }) => <i key={`${label}-${tag}`}><span>{label}</span><b>{tag}</b></i>)}</span>
+      </div>
+    </section>
 
     <section className="landing-section steps-section" id="how">
       <div className="landing-section-head"><p>How it works</p><h2>From statement to<br/><em>money clarity</em> in three moves.</h2></div>
