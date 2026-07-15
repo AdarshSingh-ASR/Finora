@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { reportPreference, user, userLedger } from "../db/schema";
-import { auth } from "./auth";
+import { getAuth } from "./auth";
 import { detectSubscriptions, financialHealthScore, money, weeklyReport } from "./finance";
 import type { Budget, StatementResult } from "./types";
 
@@ -54,7 +54,7 @@ export async function sendDueWeeklyReports(options: { force?: boolean; now?: Dat
 
   for (const row of dueRecipients) {
     try {
-      const { accessToken } = await auth.api.getAccessToken({ body: { providerId: "google", userId: row.person.id } });
+      const { accessToken } = await getAuth().api.getAccessToken({ body: { providerId: "google", userId: row.person.id } });
       if (!accessToken) throw new Error("Google Gmail permission is missing.");
       const email = buildWeeklyEmail(row.person.email, row.person.name, JSON.parse(row.ledger.statementJson), JSON.parse(row.ledger.budgetsJson));
       const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {

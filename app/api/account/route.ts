@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
-import { auth } from "../../../lib/auth";
+import { getAuth } from "../../../lib/auth";
 import { getDb } from "../../../db";
 import { reportPreference, userLedger } from "../../../db/schema";
 
 async function currentUser(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getAuth().api.getSession({ headers: request.headers });
   return session?.user || null;
 }
 
