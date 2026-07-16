@@ -6,21 +6,21 @@ export function PaymentFlowAnimation() {
         <desc id="payment-flow-desc">Several sample UPI payment notifications move from a phone into the Finora AI core and emerge as a categorized report with charts.</desc>
         <defs>
           <linearGradient id="flow-bg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#1c3026" />
-            <stop offset="1" stopColor="#101a15" />
+            <stop offset="0" stopColor="#eee8dc" />
+            <stop offset="1" stopColor="#d9cdb8" />
           </linearGradient>
           <linearGradient id="ai-ring" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#d7ff46" />
-            <stop offset=".5" stopColor="#38e5a4" />
-            <stop offset="1" stopColor="#6f8cff" />
+            <stop offset="0" stopColor="#d36a42" />
+            <stop offset=".5" stopColor="#a5966d" />
+            <stop offset="1" stopColor="#26231f" />
           </linearGradient>
           <linearGradient id="report-line" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor="#38c98f" />
-            <stop offset="1" stopColor="#5b7cff" />
+            <stop offset="0" stopColor="#cb6845" />
+            <stop offset="1" stopColor="#766f4e" />
           </linearGradient>
           <filter id="ai-glow" x="-80%" y="-80%" width="260%" height="260%">
             <feGaussianBlur stdDeviation="13" result="blur" />
-            <feFlood floodColor="#38e5a4" floodOpacity=".32" />
+            <feFlood floodColor="#c8704d" floodOpacity=".28" />
             <feComposite in2="blur" operator="in" />
             <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
           </filter>
@@ -36,8 +36,25 @@ export function PaymentFlowAnimation() {
 
         <rect x="0" y="0" width="1200" height="620" rx="30" fill="url(#flow-bg)" />
         <g opacity=".08">
-          {Array.from({ length: 15 }).map((_, index) => <line key={`v-${index}`} x1={index * 86} y1="0" x2={index * 86} y2="620" stroke="#bfffe3" />)}
-          {Array.from({ length: 9 }).map((_, index) => <line key={`h-${index}`} x1="0" y1={index * 78} x2="1200" y2={index * 78} stroke="#bfffe3" />)}
+          {Array.from({ length: 15 }).map((_, index) => <line key={`v-${index}`} x1={index * 86} y1="0" x2={index * 86} y2="620" stroke="#2d2923" />)}
+          {Array.from({ length: 9 }).map((_, index) => <line key={`h-${index}`} x1="0" y1={index * 78} x2="1200" y2={index * 78} stroke="#2d2923" />)}
+        </g>
+
+        <g className="bank-statement bank-statement-one" transform="rotate(-8 146 302)">
+          <rect x="18" y="112" width="236" height="382" rx="18" fill="#f8f4eb" stroke="#b9ae9b" />
+          <text x="39" y="145" className="statement-bank">ANY BANK</text>
+          <text x="39" y="166" className="statement-title">Account statement</text>
+          <rect x="39" y="187" width="175" height="7" rx="3" fill="#d8cfbf" />
+          <rect x="39" y="211" width="73" height="7" rx="3" fill="#c8bba7" />
+          <rect x="127" y="211" width="87" height="7" rx="3" fill="#e1d8c9" />
+          {Array.from({ length: 7 }).map((_, index) => <g key={index}><line x1="39" y1={249 + index * 29} x2="214" y2={249 + index * 29} stroke="#ddd4c5"/><circle cx="45" cy={239 + index * 29} r="3" fill="#c96b49"/><rect x="57" y={235 + index * 29} width={82 + (index % 3) * 15} height="6" rx="3" fill="#cfc5b5"/></g>)}
+        </g>
+        <g className="bank-statement bank-statement-two" transform="rotate(6 204 286)">
+          <rect x="104" y="92" width="210" height="364" rx="18" fill="#e3dacb" stroke="#b9ae9b" />
+          <text x="126" y="125" className="statement-bank">CARD / CSV / XLSX</text>
+          <text x="126" y="148" className="statement-title">Transaction export</text>
+          <rect x="126" y="174" width="165" height="224" rx="10" fill="#eee8dc" />
+          {Array.from({ length: 6 }).map((_, index) => <g key={index}><line x1="141" y1={205 + index * 31} x2="276" y2={205 + index * 31} stroke="#cfc4b4"/><rect x="141" y={191 + index * 31} width="54" height="6" rx="3" fill="#b9ae9b"/><rect x="230" y={191 + index * 31} width="46" height="6" rx="3" fill="#d07a58" opacity=".65"/></g>)}
         </g>
 
         <g className="flow-phone" filter="url(#soft-shadow)">
@@ -86,16 +103,22 @@ export function PaymentFlowAnimation() {
           </g>
           <rect x="145" y="518" width="80" height="4" rx="2" fill="#577064" />
         </g>
+        <g className="input-format-ribbon">
+          <rect x="22" y="38" width="143" height="28" rx="14" fill="#f8f4eb" stroke="#b9ae9b" />
+          <text x="94" y="56" textAnchor="middle">ANY BANK STATEMENT</text>
+          <rect x="174" y="38" width="73" height="28" rx="14" fill="#d36a42" />
+          <text x="210" y="56" textAnchor="middle" className="ribbon-light">UPI LIVE</text>
+        </g>
 
-        <g className="flow-routes" fill="none" stroke="#5ce4ad" strokeWidth="2" strokeDasharray="5 8" opacity=".42">
+        <g className="flow-routes" fill="none" stroke="#8d674f" strokeWidth="2" strokeDasharray="5 8" opacity=".48">
           <use href="#route-one"/><use href="#route-two"/><use href="#route-three"/>
           <use href="#route-report" stroke="#8da0ff" />
         </g>
         <g className="flow-particles">
-          <circle r="6" fill="#d7ff46"><animateMotion dur="3.4s" begin="0s" repeatCount="indefinite"><mpath href="#route-one"/></animateMotion></circle>
-          <circle r="5" fill="#39e5a4"><animateMotion dur="3.4s" begin="1.15s" repeatCount="indefinite"><mpath href="#route-two"/></animateMotion></circle>
-          <circle r="5" fill="#7a8dff"><animateMotion dur="3.4s" begin="2.3s" repeatCount="indefinite"><mpath href="#route-three"/></animateMotion></circle>
-          <circle r="6" fill="#d7ff46"><animateMotion dur="2.2s" begin=".8s" repeatCount="indefinite"><mpath href="#route-report"/></animateMotion></circle>
+          <circle r="6" fill="#d36a42"><animateMotion dur="3.4s" begin="0s" repeatCount="indefinite"><mpath href="#route-one"/></animateMotion></circle>
+          <circle r="5" fill="#817654"><animateMotion dur="3.4s" begin="1.15s" repeatCount="indefinite"><mpath href="#route-two"/></animateMotion></circle>
+          <circle r="5" fill="#25231f"><animateMotion dur="3.4s" begin="2.3s" repeatCount="indefinite"><mpath href="#route-three"/></animateMotion></circle>
+          <circle r="6" fill="#d36a42"><animateMotion dur="2.2s" begin=".8s" repeatCount="indefinite"><mpath href="#route-report"/></animateMotion></circle>
         </g>
 
         <g className="ai-core" filter="url(#ai-glow)">
@@ -104,11 +127,11 @@ export function PaymentFlowAnimation() {
           <rect x="564" y="260" width="88" height="88" rx="25" fill="url(#ai-ring)" transform="rotate(8 608 304)" />
           <rect x="576" y="272" width="64" height="64" rx="19" fill="#14231c" />
           <text x="608" y="319" textAnchor="middle" className="ai-mark">F</text>
-          <circle className="ai-orbit-dot" cx="608" cy="215" r="6" fill="#d7ff46" />
+          <circle className="ai-orbit-dot" cx="608" cy="215" r="6" fill="#d36a42" />
           <path d="M650 258l7 3 3 7 3-7 7-3-7-3-3-7-3 7z" fill="#fff" />
         </g>
         <text x="608" y="417" textAnchor="middle" className="ai-label">FINORA AI CORE</text>
-        <text x="608" y="438" textAnchor="middle" className="ai-sublabel">normalize · categorize · explain</text>
+        <text x="608" y="438" textAnchor="middle" className="ai-sublabel">read · normalize · explain</text>
 
         <g className="report-sheet" filter="url(#soft-shadow)">
           <rect x="792" y="48" width="362" height="524" rx="24" fill="#fbfdfb" stroke="#dce8e1" />
