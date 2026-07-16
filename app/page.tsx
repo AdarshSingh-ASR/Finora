@@ -8,6 +8,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { signIn, useSession } from "../lib/auth-client";
+import { PaymentFlowAnimation } from "./payment-flow-animation";
 
 const inputFormats = [
   { label: "Bank account statement", tag: "PDF" },
@@ -114,6 +115,14 @@ export default function LandingPage() {
         <span>{inputFormats.map(({ label, tag }) => <i key={`${label}-${tag}`}><span>{label}</span><b>{tag}</b></i>)}</span>
         <span aria-hidden="true">{inputFormats.map(({ label, tag }) => <i key={`${label}-${tag}`}><span>{label}</span><b>{tag}</b></i>)}</span>
       </div>
+    </section>
+
+    <section className="payment-flow-section" aria-labelledby="payment-flow-heading">
+      <div className="payment-flow-heading">
+        <div><p>From payment noise to signal</p><h2 id="payment-flow-heading">Every UPI ping becomes<br/><em>one clear money story.</em></h2></div>
+        <p>Finora gathers scattered payment alerts, understands the merchant and context, then turns them into a report you can question, review, and export.</p>
+      </div>
+      <PaymentFlowAnimation />
     </section>
 
     <section className="steps-story" id="how" ref={stepsStoryRef}>
