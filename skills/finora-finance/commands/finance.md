@@ -1,0 +1,1 @@
+Use the `finora-finance` skill for this request. Treat `$ARGUMENTS` as the requested Finora command or natural-language finance task. If the arguments are `skill-sync`, run the skill's secure connection workflow. Delegate calculations and mutations to the bundled Finora client and backend; never expose stored credentials.

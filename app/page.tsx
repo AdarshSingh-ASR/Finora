@@ -58,21 +58,33 @@ export default function LandingPage() {
           <button onClick={openFinora} disabled={isPending}>{session?.user ? "Open workspace" : "Analyze a statement"}<ArrowRight size={15}/></button>
         </nav>
 
-        <div className="beige-hero-title">
-          <p>01 · THE MONEY LAYER</p>
+        <div className="beige-hero-copy">
+          <p>01 · YOUR MONEY, MADE LEGIBLE</p>
           <h1>Every statement.<br/><em>One money story.</em></h1>
+          <p>Turn bank, card, and UPI activity into a private financial memory you can understand, question, and use.</p>
+          <div className="beige-hero-actions">
+            <button onClick={openFinora} disabled={isPending}>Analyze my statement <ArrowRight size={16}/></button>
+            <a href="#flow">See how it works</a>
+          </div>
         </div>
 
-        <div className="beige-hero-animation"><PaymentFlowAnimation /></div>
-
         <div className="beige-hero-foot">
-          <p><span>ANY BANK · CARD · UPI</span>Messy financial files become one explainable memory.</p>
-          <p><span>PRIVATE BY DEFAULT</span>Real data only. Raw statements are never kept.</p>
+          <p><span>ANY BANK · CARD · UPI</span>One private, explainable ledger.</p>
+          <p><span>REAL DATA ONLY</span>No sample transactions. Raw files are never kept.</p>
         </div>
       </section>
 
+      <section className="beige-flow" id="flow" aria-labelledby="flow-heading">
+        <div className="beige-flow-heading">
+          <p>02 · FROM FILE TO FINANCIAL MEMORY</p>
+          <h2 id="flow-heading">Financial noise in.<br/><em>Useful clarity out.</em></h2>
+          <span>Statements and UPI activity become one categorized, explainable report.</span>
+        </div>
+        <div className="beige-flow-animation"><PaymentFlowAnimation /></div>
+      </section>
+
       <section className="beige-what arrow-field" id="what">
-        <div className="beige-section-heading"><p>02 · THE LEDGER</p><h2>What we do here.</h2></div>
+        <div className="beige-section-heading"><p>03 · THE LEDGER</p><h2>What we do here.</h2></div>
         <div className="beige-capability-grid">
           {capabilities.map((item) => (
             <article key={item.number} className={`beige-capability beige-capability-${item.motif}`}>
@@ -91,7 +103,7 @@ export default function LandingPage() {
 
       <section className="beige-mcp" id="mcp">
         <div className="beige-mcp-copy">
-          <p>03 · THE AGENT SURFACE</p>
+          <p>04 · THE AGENT SURFACE</p>
           <h2>The MCP is not an add-on.<br/><em>It is the product.</em></h2>
           <p>Focused tools let any compatible agent parse, review, analyze, question, and export your financial memory without forcing one monolithic workflow.</p>
           <button onClick={openFinora}>Connect my money memory <ArrowRight size={16}/></button>
@@ -107,7 +119,7 @@ export default function LandingPage() {
       </section>
 
       <section className="beige-control arrow-field" id="control">
-        <div className="beige-section-heading"><p>04 · YOUR CONTROL</p><h2>Your statement is input.<br/><em>Not inventory.</em></h2></div>
+        <div className="beige-section-heading"><p>05 · YOUR CONTROL</p><h2>Your statement is input.<br/><em>Not inventory.</em></h2></div>
         <div className="beige-control-grid">
           <article><FileScan/><span><strong>Raw files disappear</strong><small>Processed in-request and never retained.</small></span></article>
           <article><Fingerprint/><span><strong>Evidence stays attached</strong><small>Every category can show its reason.</small></span></article>

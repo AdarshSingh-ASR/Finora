@@ -1,0 +1,1 @@
+ALTER TABLE `report_preference` ADD `frequency` text DEFAULT 'weekly' NOT NULL;

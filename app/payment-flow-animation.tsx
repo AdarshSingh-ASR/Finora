@@ -6,21 +6,21 @@ export function PaymentFlowAnimation() {
         <desc id="payment-flow-desc">Several sample UPI payment notifications move from a phone into the Finora AI core and emerge as a categorized report with charts.</desc>
         <defs>
           <linearGradient id="flow-bg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#eee8dc" />
-            <stop offset="1" stopColor="#d9cdb8" />
+            <stop offset="0" stopColor="#e9faf4" />
+            <stop offset="1" stopColor="#c7eee2" />
           </linearGradient>
           <linearGradient id="ai-ring" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#d36a42" />
-            <stop offset=".5" stopColor="#a5966d" />
-            <stop offset="1" stopColor="#26231f" />
+            <stop offset="0" stopColor="#00d8ad" />
+            <stop offset=".5" stopColor="#5bd4b3" />
+            <stop offset="1" stopColor="#10231c" />
           </linearGradient>
           <linearGradient id="report-line" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor="#cb6845" />
-            <stop offset="1" stopColor="#766f4e" />
+            <stop offset="0" stopColor="#16b88b" />
+            <stop offset="1" stopColor="#087d61" />
           </linearGradient>
           <filter id="ai-glow" x="-80%" y="-80%" width="260%" height="260%">
             <feGaussianBlur stdDeviation="13" result="blur" />
-            <feFlood floodColor="#c8704d" floodOpacity=".28" />
+            <feFlood floodColor="#00d8ad" floodOpacity=".28" />
             <feComposite in2="blur" operator="in" />
             <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
           </filter>
@@ -41,20 +41,20 @@ export function PaymentFlowAnimation() {
         </g>
 
         <g className="bank-statement bank-statement-one" transform="rotate(-8 146 302)">
-          <rect x="18" y="112" width="236" height="382" rx="18" fill="#f8f4eb" stroke="#b9ae9b" />
+          <rect x="18" y="112" width="236" height="382" rx="18" fill="#f7fbf8" stroke="#9fcfc0" />
           <text x="39" y="145" className="statement-bank">ANY BANK</text>
           <text x="39" y="166" className="statement-title">Account statement</text>
-          <rect x="39" y="187" width="175" height="7" rx="3" fill="#d8cfbf" />
-          <rect x="39" y="211" width="73" height="7" rx="3" fill="#c8bba7" />
-          <rect x="127" y="211" width="87" height="7" rx="3" fill="#e1d8c9" />
-          {Array.from({ length: 7 }).map((_, index) => <g key={index}><line x1="39" y1={249 + index * 29} x2="214" y2={249 + index * 29} stroke="#ddd4c5"/><circle cx="45" cy={239 + index * 29} r="3" fill="#c96b49"/><rect x="57" y={235 + index * 29} width={82 + (index % 3) * 15} height="6" rx="3" fill="#cfc5b5"/></g>)}
+          <rect x="39" y="187" width="175" height="7" rx="3" fill="#c8e2d8" />
+          <rect x="39" y="211" width="73" height="7" rx="3" fill="#9fc7b9" />
+          <rect x="127" y="211" width="87" height="7" rx="3" fill="#dcefe8" />
+          {Array.from({ length: 7 }).map((_, index) => <g key={index}><line x1="39" y1={249 + index * 29} x2="214" y2={249 + index * 29} stroke="#d2e7df"/><circle cx="45" cy={239 + index * 29} r="3" fill="#16b88b"/><rect x="57" y={235 + index * 29} width={82 + (index % 3) * 15} height="6" rx="3" fill="#bdd9cf"/></g>)}
         </g>
         <g className="bank-statement bank-statement-two" transform="rotate(6 204 286)">
-          <rect x="104" y="92" width="210" height="364" rx="18" fill="#e3dacb" stroke="#b9ae9b" />
+          <rect x="104" y="92" width="210" height="364" rx="18" fill="#dcefe8" stroke="#9fcfc0" />
           <text x="126" y="125" className="statement-bank">CARD / CSV / XLSX</text>
           <text x="126" y="148" className="statement-title">Transaction export</text>
-          <rect x="126" y="174" width="165" height="224" rx="10" fill="#eee8dc" />
-          {Array.from({ length: 6 }).map((_, index) => <g key={index}><line x1="141" y1={205 + index * 31} x2="276" y2={205 + index * 31} stroke="#cfc4b4"/><rect x="141" y={191 + index * 31} width="54" height="6" rx="3" fill="#b9ae9b"/><rect x="230" y={191 + index * 31} width="46" height="6" rx="3" fill="#d07a58" opacity=".65"/></g>)}
+          <rect x="126" y="174" width="165" height="224" rx="10" fill="#f1faf6" />
+          {Array.from({ length: 6 }).map((_, index) => <g key={index}><line x1="141" y1={205 + index * 31} x2="276" y2={205 + index * 31} stroke="#c5ded5"/><rect x="141" y={191 + index * 31} width="54" height="6" rx="3" fill="#9fc7b9"/><rect x="230" y={191 + index * 31} width="46" height="6" rx="3" fill="#16b88b" opacity=".65"/></g>)}
         </g>
 
         <g className="flow-phone" filter="url(#soft-shadow)">
@@ -70,7 +70,7 @@ export function PaymentFlowAnimation() {
 
             <g className="upi-notification upi-one">
               <rect x="86" y="188" width="198" height="68" rx="14" fill="#fff" stroke="#dce8e1" />
-              <circle cx="108" cy="211" r="11" fill="#ff7a59" />
+              <circle cx="108" cy="211" r="11" fill="#16b88b" />
               <text x="128" y="209" className="upi-merchant">Swiggy</text>
               <text x="128" y="228" className="upi-meta">Paid via UPI</text>
               <text x="264" y="213" textAnchor="end" className="upi-amount">₹642</text>
@@ -94,7 +94,7 @@ export function PaymentFlowAnimation() {
             </g>
             <g className="upi-notification upi-four">
               <rect x="86" y="422" width="198" height="68" rx="14" fill="#fff" stroke="#dce8e1" />
-              <circle cx="108" cy="445" r="11" fill="#d7ff46" />
+              <circle cx="108" cy="445" r="11" fill="#00d8ad" />
               <text x="128" y="443" className="upi-merchant">Netflix</text>
               <text x="128" y="462" className="upi-meta">Recurring payment</text>
               <text x="264" y="447" textAnchor="end" className="upi-amount">₹649</text>
@@ -104,21 +104,21 @@ export function PaymentFlowAnimation() {
           <rect x="145" y="518" width="80" height="4" rx="2" fill="#577064" />
         </g>
         <g className="input-format-ribbon">
-          <rect x="22" y="38" width="143" height="28" rx="14" fill="#f8f4eb" stroke="#b9ae9b" />
+          <rect x="22" y="38" width="143" height="28" rx="14" fill="#f7fbf8" stroke="#9fcfc0" />
           <text x="94" y="56" textAnchor="middle">ANY BANK STATEMENT</text>
-          <rect x="174" y="38" width="73" height="28" rx="14" fill="#d36a42" />
+          <rect x="174" y="38" width="73" height="28" rx="14" fill="#16b88b" />
           <text x="210" y="56" textAnchor="middle" className="ribbon-light">UPI LIVE</text>
         </g>
 
-        <g className="flow-routes" fill="none" stroke="#8d674f" strokeWidth="2" strokeDasharray="5 8" opacity=".48">
+        <g className="flow-routes" fill="none" stroke="#168b6b" strokeWidth="2" strokeDasharray="5 8" opacity=".48">
           <use href="#route-one"/><use href="#route-two"/><use href="#route-three"/>
           <use href="#route-report" stroke="#8da0ff" />
         </g>
         <g className="flow-particles">
-          <circle r="6" fill="#d36a42"><animateMotion dur="3.4s" begin="0s" repeatCount="indefinite"><mpath href="#route-one"/></animateMotion></circle>
-          <circle r="5" fill="#817654"><animateMotion dur="3.4s" begin="1.15s" repeatCount="indefinite"><mpath href="#route-two"/></animateMotion></circle>
-          <circle r="5" fill="#25231f"><animateMotion dur="3.4s" begin="2.3s" repeatCount="indefinite"><mpath href="#route-three"/></animateMotion></circle>
-          <circle r="6" fill="#d36a42"><animateMotion dur="2.2s" begin=".8s" repeatCount="indefinite"><mpath href="#route-report"/></animateMotion></circle>
+          <circle r="6" fill="#00d8ad"><animateMotion dur="3.4s" begin="0s" repeatCount="indefinite"><mpath href="#route-one"/></animateMotion></circle>
+          <circle r="5" fill="#5bd4b3"><animateMotion dur="3.4s" begin="1.15s" repeatCount="indefinite"><mpath href="#route-two"/></animateMotion></circle>
+          <circle r="5" fill="#10231c"><animateMotion dur="3.4s" begin="2.3s" repeatCount="indefinite"><mpath href="#route-three"/></animateMotion></circle>
+          <circle r="6" fill="#16b88b"><animateMotion dur="2.2s" begin=".8s" repeatCount="indefinite"><mpath href="#route-report"/></animateMotion></circle>
         </g>
 
         <g className="ai-core" filter="url(#ai-glow)">
@@ -127,7 +127,7 @@ export function PaymentFlowAnimation() {
           <rect x="564" y="260" width="88" height="88" rx="25" fill="url(#ai-ring)" transform="rotate(8 608 304)" />
           <rect x="576" y="272" width="64" height="64" rx="19" fill="#14231c" />
           <text x="608" y="319" textAnchor="middle" className="ai-mark">F</text>
-          <circle className="ai-orbit-dot" cx="608" cy="215" r="6" fill="#d36a42" />
+          <circle className="ai-orbit-dot" cx="608" cy="215" r="6" fill="#00d8ad" />
           <path d="M650 258l7 3 3 7 3-7 7-3-7-3-3-7-3 7z" fill="#fff" />
         </g>
         <text x="608" y="417" textAnchor="middle" className="ai-label">FINORA AI CORE</text>
@@ -141,7 +141,7 @@ export function PaymentFlowAnimation() {
           <text x="824" y="84" textAnchor="middle" className="report-f">F</text>
           <text x="850" y="76" className="report-title">July money report</text>
           <text x="850" y="94" className="report-subtitle">Built from 86 transactions</text>
-          <rect x="1065" y="67" width="67" height="22" rx="11" fill="#d7ff46" />
+          <rect x="1065" y="67" width="67" height="22" rx="11" fill="#79f5d2" />
           <text x="1099" y="81" textAnchor="middle" className="report-badge">SAMPLE</text>
 
           <text x="818" y="143" className="report-label">TOTAL SPENT</text>
@@ -162,10 +162,10 @@ export function PaymentFlowAnimation() {
           <g className="report-bars">
             <text x="818" y="424" className="bar-name">Food</text><rect x="882" y="413" width="215" height="13" rx="7" fill="#e4ebe7"/><rect className="bar-fill bar-food" x="882" y="413" width="168" height="13" rx="7" fill="#38c98f"/><text x="1127" y="424" textAnchor="end" className="bar-value">₹12.6k</text>
             <text x="818" y="455" className="bar-name">Shopping</text><rect x="882" y="444" width="215" height="13" rx="7" fill="#e4ebe7"/><rect className="bar-fill bar-shopping" x="882" y="444" width="112" height="13" rx="7" fill="#6681ff"/><text x="1127" y="455" textAnchor="end" className="bar-value">₹8.4k</text>
-            <text x="818" y="486" className="bar-name">Travel</text><rect x="882" y="475" width="215" height="13" rx="7" fill="#e4ebe7"/><rect className="bar-fill bar-travel" x="882" y="475" width="77" height="13" rx="7" fill="#d7ff46"/><text x="1127" y="486" textAnchor="end" className="bar-value">₹5.8k</text>
+            <text x="818" y="486" className="bar-name">Travel</text><rect x="882" y="475" width="215" height="13" rx="7" fill="#e4ebe7"/><rect className="bar-fill bar-travel" x="882" y="475" width="77" height="13" rx="7" fill="#79f5d2"/><text x="1127" y="486" textAnchor="end" className="bar-value">₹5.8k</text>
           </g>
           <rect x="818" y="515" width="310" height="37" rx="11" fill="#14231c" />
-          <circle cx="837" cy="533" r="5" fill="#d7ff46" />
+          <circle cx="837" cy="533" r="5" fill="#79f5d2" />
           <text x="850" y="536" className="report-insight">Food delivery rose 18% this month</text>
         </g>
       </svg>

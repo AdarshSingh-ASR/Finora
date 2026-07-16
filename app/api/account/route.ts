@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const [preference] = await db.select().from(reportPreference).where(eq(reportPreference.userId, user.id)).limit(1);
   return Response.json({
     ledger: ledger ? { statement: JSON.parse(ledger.statementJson), budgets: JSON.parse(ledger.budgetsJson), updatedAt: ledger.updatedAt } : null,
-    preferences: preference || { weeklyEmailEnabled: false, timezone: "Asia/Kolkata", reportDay: 0, lastSentAt: null },
+    preferences: preference || { weeklyEmailEnabled: false, frequency: "weekly", timezone: "Asia/Kolkata", reportDay: 0, lastSentAt: null },
   });
 }
 
@@ -39,8 +39,11 @@ export async function PUT(request: Request) {
     const input = body.preferences as Record<string, unknown>;
     const timezone = typeof input.timezone === "string" && input.timezone.length < 80 ? input.timezone : "Asia/Kolkata";
     const weeklyEmailEnabled = input.weeklyEmailEnabled === true;
-    await db.insert(reportPreference).values({ userId: user.id, weeklyEmailEnabled, timezone, reportDay: 0, updatedAt: now })
-      .onConflictDoUpdate({ target: reportPreference.userId, set: { weeklyEmailEnabled, timezone, updatedAt: now } });
+    const frequency = input.frequency === "monthly" ? "monthly" : "weekly";
+    const [currentPreference] = await db.select().from(reportPreference).where(eq(reportPreference.userId, user.id)).limit(1);
+    const lastSentAt = currentPreference && currentPreference.frequency !== frequency ? null : currentPreference?.lastSentAt;
+    await db.insert(reportPreference).values({ userId: user.id, weeklyEmailEnabled, frequency, timezone, reportDay: 0, updatedAt: now })
+      .onConflictDoUpdate({ target: reportPreference.userId, set: { weeklyEmailEnabled, frequency, timezone, lastSentAt, updatedAt: now } });
   }
   return Response.json({ ok: true });
 }

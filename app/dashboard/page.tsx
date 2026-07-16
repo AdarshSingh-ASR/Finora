@@ -3,12 +3,15 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Activity, AlertCircle, ArrowDownLeft, ArrowUpRight, BadgeCheck, Bot, CalendarDays,
-  Camera, Check, ChevronRight, CircleHelp, Cloud, CopyCheck, FileSpreadsheet,
+  Camera, Check, ChevronDown, ChevronRight, CircleHelp, Copy, CopyCheck, ExternalLink, FileSpreadsheet,
   FileText, Gauge, LayoutDashboard, LoaderCircle, LockKeyhole, Menu, MoreHorizontal,
   ReceiptIndianRupee, Repeat2, Search, ShieldCheck, Sparkles, UploadCloud,
-  X, Zap, LogOut, Mail, UserRound, Plus, Trash2, Database, ArrowRight,
+  X, Zap, LogOut, Mail, UserRound, Plus, Trash2, Database, ArrowRight, MessageSquare,
+  Files, Folder, Pencil, RefreshCw, Share2, Unlink,
 } from "lucide-react";
 import { answerFinanceQuestion, budgetStatus, categories, compareMonths, detectAnomalies, detectSubscriptions, financialHealthScore, findDuplicateTransactions, inPeriod, latestPeriod, money, summarize, weeklyReport } from "../../lib/finance";
 import { categoryColors } from "../../lib/category-colors";
@@ -19,20 +22,25 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { NumberTicker } from "../../components/magicui/number-ticker";
 import { BorderBeam } from "../../components/magicui/border-beam";
 
-type View = "overview" | "transactions" | "agent";
+type View = "overview" | "transactions" | "reports" | "agent";
 type Toast = { tone: "good" | "bad"; message: string } | null;
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
+type ChatThread = { id: string; title: string; messages: ChatMessage[]; createdAt: string; updatedAt: string };
+type SheetConnection = { spreadsheetId: string; spreadsheetUrl: string; name: string; folderId?: string | null; lastSyncedAt: string; stale?: boolean };
+type SheetFile = { id: string; name: string; webViewLink?: string; modifiedTime?: string; parents?: string[] };
 
 const emptyStatement: StatementResult = { accountName: "", bankName: "", period: "", currency: "INR", transactions: [], insights: [] };
 
-function MiniTrend({ values }: { values: number[] }) {
+function MiniTrend({ values, large = false }: { values: number[]; large?: boolean }) {
   if (!values.length) return null;
   const maximum = Math.max(...values, 1), denominator = Math.max(1, values.length - 1);
   const points = values.map((value, index) => `${(index / denominator) * 100},${70 - (value / maximum) * 54}`).join(" ");
+  const gradientId = large ? "area-large" : "area-small";
   return (
-    <svg className="trend-chart" viewBox="0 0 100 75" preserveAspectRatio="none" aria-label="Spending trend">
-      <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#275dff" stopOpacity=".24"/><stop offset="1" stopColor="#275dff" stopOpacity="0"/></linearGradient></defs>
-      <path d={`M0,75 L${points} L100,75 Z`} fill="url(#area)" />
-      <polyline points={points} fill="none" stroke="#275dff" strokeWidth="2.2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+    <svg className={large ? "trend-chart dashboard-trend-chart" : "trend-chart"} viewBox="0 0 100 75" preserveAspectRatio="none" aria-label="Spending trend">
+      <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#16b88b" stopOpacity=".3"/><stop offset="1" stopColor="#16b88b" stopOpacity="0"/></linearGradient></defs>
+      <path d={`M0,75 L${points} L100,75 Z`} fill={`url(#${gradientId})`} />
+      <polyline points={points} fill="none" stroke="#0f9c74" strokeWidth="2.2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -51,6 +59,123 @@ function EmptyWorkspace({ signedIn, uploading, uploadLabel, onSignIn, onUpload }
     {signedIn && <div className="format-row"><span>PDF</span><span>CSV</span><span>Excel</span><span>Screenshot</span><span>UPI</span></div>}
     <small><ShieldCheck size={13}/>{signedIn ? "No sample transactions. Your dashboard starts empty." : "Your normalized ledger is stored under your account."}</small>
     <BorderBeam/>
+  </section>;
+}
+
+const financePrompts = [
+  "Where did I spend the most this month?",
+  "Find possible duplicate payments",
+  "Show my recurring subscriptions",
+  "Compare this month with the previous month",
+];
+
+function ChatWorkspace({ chats, activeChatId, messages, question, asking, transactionCount, userName, onQuestion, onAsk, onNewChat, onSelectChat, onDeleteChat, endRef }: {
+  chats: ChatThread[];
+  activeChatId: string | null;
+  messages: ChatMessage[];
+  question: string;
+  asking: boolean;
+  transactionCount: number;
+  userName: string;
+  onQuestion: (value: string) => void;
+  onAsk: (prompt?: string) => void;
+  onNewChat: () => void;
+  onSelectChat: (chat: ChatThread) => void;
+  onDeleteChat: (chat: ChatThread) => void;
+  endRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  async function copyReply(message: ChatMessage) {
+    await navigator.clipboard.writeText(message.content);
+    setCopiedId(message.id);
+    window.setTimeout(() => setCopiedId((current) => current === message.id ? null : current), 1800);
+  }
+
+  return <section className="finora-chat-page" aria-label="Chat with Finora">
+    <header className="finora-chat-header">
+      <div><button className="finora-history-toggle" onClick={() => setHistoryOpen((open) => !open)} aria-label="Show chat history"><MessageSquare size={15}/></button><Mark/><span><strong>Ask Finora</strong><small><i/>Grounded in {transactionCount} transactions</small></span></div>
+    </header>
+
+    <div className="finora-chat-body">
+      <aside className={`finora-chat-history ${historyOpen ? "open" : ""}`} aria-label="Chat history">
+        <div className="finora-history-head"><span>YOUR CHATS</span><strong>{chats.length}</strong></div>
+        <button className="finora-history-new" onClick={() => { onNewChat(); setHistoryOpen(false); }}><Plus size={14}/>Start a new chat</button>
+        <div className="finora-history-list">
+          {chats.map((chat) => <div className={`finora-history-item ${chat.id === activeChatId ? "active" : ""}`} key={chat.id}>
+            <button onClick={() => { onSelectChat(chat); setHistoryOpen(false); }}><MessageSquare size={13}/><span><strong>{chat.title}</strong><small>{new Date(chat.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {Math.ceil(chat.messages.length / 2)} repl{Math.ceil(chat.messages.length / 2) === 1 ? "y" : "ies"}</small></span></button>
+            <button onClick={() => onDeleteChat(chat)} aria-label={`Delete ${chat.title}`} title="Delete chat"><Trash2 size={13}/></button>
+          </div>)}
+          {chats.length === 0 && <div className="finora-history-empty"><MessageSquare size={18}/><span>Your conversations will appear here.</span></div>}
+        </div>
+      </aside>
+      {historyOpen && <button className="finora-history-scrim" onClick={() => setHistoryOpen(false)} aria-label="Close chat history"/>}
+
+      <div className="finora-chat-conversation">
+        <div className="finora-chat-thread" aria-live="polite">
+          {messages.length === 0 && <div className="finora-chat-welcome">
+            <span><Sparkles size={22}/></span>
+            <p className="eyebrow">YOUR FINANCIAL COPILOT</p>
+            <h1>What would you like<br/>to know, {userName.split(" ")[0]}?</h1>
+            <p>Ask naturally. Finora can follow context, compare periods, inspect merchants, and explain every answer from your imported ledger.</p>
+            <div className="finora-chat-suggestions">{financePrompts.map((prompt) => <button key={prompt} onClick={() => onAsk(prompt)}>{prompt}<ArrowUpRight size={15}/></button>)}</div>
+          </div>}
+
+          {messages.map((message) => <article className={`finora-chat-message ${message.role}`} key={message.id}>
+            <div className="finora-chat-avatar">{message.role === "assistant" ? <Mark/> : <UserRound size={16}/>}</div>
+            <div>
+              <span>{message.role === "assistant" ? "Finora" : "You"}</span>
+              {message.role === "assistant" ? <div className="finora-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div> : <p>{message.content}</p>}
+              {message.role === "assistant" && <div className="finora-message-actions">
+                <small><ShieldCheck size={11}/>Based on your ledger</small>
+                <button type="button" onClick={() => void copyReply(message)} aria-label={copiedId === message.id ? "Reply copied" : "Copy reply"} title={copiedId === message.id ? "Copied" : "Copy reply"}>
+                  {copiedId === message.id ? <Check size={13}/> : <Copy size={13}/>}<span>{copiedId === message.id ? "Copied" : "Copy"}</span>
+                </button>
+              </div>}
+            </div>
+          </article>)}
+
+          {asking && <article className="finora-chat-message assistant thinking"><div className="finora-chat-avatar"><Mark/></div><div><span>Finora</span><p><i/><i/><i/></p><small>Reading your ledger and conversation…</small></div></article>}
+          <div ref={endRef}/>
+        </div>
+
+        <div className="finora-chat-composer-wrap">
+          <form className="finora-chat-composer" onSubmit={(event) => { event.preventDefault(); onAsk(); }}>
+            <textarea rows={1} value={question} onChange={(event) => onQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onAsk(); } }} placeholder="Ask anything about your money…" aria-label="Message Finora"/>
+            <div><span><Database size={12}/>{transactionCount} transactions in context</span><button type="submit" disabled={!question.trim() || asking} aria-label="Send message"><ArrowUpRight size={18}/></button></div>
+          </form>
+          <small>Finora answers from your imported ledger. Verify important financial decisions.</small>
+        </div>
+      </div>
+    </div>
+  </section>;
+}
+
+function ReportsPage({ frequency, enabled, timezone, period, outflow, consumption, transfers, topCategory, topMerchant, largest, healthScore, healthLabel, suggestion, onFrequency, onTimezone, onEnable, onDisable }: {
+  frequency: "weekly" | "monthly"; enabled: boolean; timezone: string; period: string; outflow: number; consumption: number; transfers: number; topCategory: string; topMerchant: string; largest: string; healthScore: number; healthLabel: string; suggestion: string;
+  onFrequency: (frequency: "weekly" | "monthly") => void; onTimezone: (timezone: string) => void; onEnable: () => void; onDisable: () => void;
+}) {
+  return <section className="view-page reports-page">
+    <div className="reports-heading"><div><p className="eyebrow"><span className="live-dot"/>YOUR MONEY, ON SCHEDULE</p><h1>AI Reports</h1><p>Choose the rhythm. Finora turns your real ledger into a concise money story and delivers it privately to your Gmail.</p></div><span className={`report-status ${enabled ? "on" : ""}`}><i/>{enabled ? `${frequency === "monthly" ? "Monthly" : "Weekly"} delivery on` : "Email delivery off"}</span></div>
+    <div className="report-frequency-grid" role="radiogroup" aria-label="AI report frequency">
+      <button className={frequency === "weekly" ? "selected" : ""} role="radio" aria-checked={frequency === "weekly"} onClick={() => onFrequency("weekly")}><span><CalendarDays size={20}/></span><small>01 · WEEKLY</small><strong>Every Sunday</strong><p>A seven-day pulse with total outflow, categories, merchants, subscriptions, and one useful move.</p><i>{frequency === "weekly" ? <Check size={14}/> : null}</i></button>
+      <button className={frequency === "monthly" ? "selected" : ""} role="radio" aria-checked={frequency === "monthly"} onClick={() => onFrequency("monthly")}><span><FileText size={20}/></span><small>02 · MONTHLY</small><strong>First of every month</strong><p>A fuller month-end review with consumption, transfers, health, recurring costs, and the largest changes.</p><i>{frequency === "monthly" ? <Check size={14}/> : null}</i></button>
+    </div>
+    <div className="reports-workspace">
+      <article className="report-preview">
+        <div className="report-preview-head"><div><Mark/><span><small>FINORA {frequency.toUpperCase()}</small><strong>{frequency === "weekly" ? "Your weekly money story" : "Your monthly money story"}</strong></span></div><em>PREVIEW</em></div>
+        <div className="report-total"><small>TOTAL OUTFLOW</small><strong>{money(outflow)}</strong><span>{period}</span></div>
+        <div className="report-preview-grid"><span><small>Consumption</small><strong>{money(consumption)}</strong></span><span><small>Transfers & investments</small><strong>{money(transfers)}</strong></span><span><small>Largest category</small><strong>{topCategory}</strong></span><span><small>Largest merchant</small><strong>{topMerchant}</strong></span><span><small>Biggest outgoing</small><strong>{largest}</strong></span><span><small>Financial health</small><strong>{healthScore}/100 · {healthLabel}</strong></span></div>
+        <div className="report-move"><Sparkles size={16}/><span><small>FINORA SUGGESTS</small><p>{suggestion}</p></span></div>
+      </article>
+      <aside className="report-delivery-panel">
+        <span className="report-delivery-icon"><Mail size={22}/></span><p className="eyebrow">PRIVATE GMAIL DELIVERY</p><h2>{enabled ? "Your report is scheduled." : "Get this report automatically."}</h2><p>{frequency === "weekly" ? "Finora will send this every Sunday at 8:00 AM in your selected timezone." : "Finora will send the completed monthly review on the first day of each month at 8:00 AM."}</p>
+        <label>Timezone<select value={timezone} onChange={(event) => onTimezone(event.target.value)}><option value="Asia/Kolkata">India · Asia/Kolkata</option><option value="America/New_York">US · New York</option><option value="America/Los_Angeles">US · Los Angeles</option><option value="Europe/London">UK · London</option><option value="Asia/Singapore">Singapore</option></select></label>
+        {enabled ? <button className="report-disable" onClick={onDisable}><X size={15}/>Turn off email delivery</button> : <button className="report-enable" onClick={onEnable}><Mail size={16}/>Allow Gmail & schedule report</button>}
+        <small><ShieldCheck size={12}/>Finora can send this report but cannot read your inbox.</small>
+      </aside>
+    </div>
   </section>;
 }
 
@@ -86,6 +211,59 @@ function TransactionRow({ transaction, onCategory }: { transaction: Transaction;
   );
 }
 
+function SheetsModal({ connection, files, busy, permissionRequired, onClose, onAuthorize, onAction, onLoadFiles, onDisconnect }: {
+  connection: SheetConnection | null;
+  files: SheetFile[] | null;
+  busy: boolean;
+  permissionRequired: boolean;
+  onClose: () => void;
+  onAuthorize: () => void;
+  onAction: (action: string, payload?: Record<string, string>) => void;
+  onLoadFiles: (search?: string) => void;
+  onDisconnect: (permanent: boolean) => void;
+}) {
+  const [name, setName] = useState("Finora Financial Dashboard");
+  const [search, setSearch] = useState("");
+  const [folderId, setFolderId] = useState("");
+  const [shareEmail, setShareEmail] = useState("");
+
+  useEffect(() => { if (connection?.name) setName(connection.name); }, [connection?.name]);
+  const normalizedFolderId = folderId.match(/\/folders\/([A-Za-z0-9_-]+)/)?.[1] || folderId.trim();
+
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal sheets-modal" onMouseDown={(event) => event.stopPropagation()}>
+    <button className="modal-close" onClick={onClose} aria-label="Close Google Sheets"><X size={18}/></button>
+    <div className="sheets-modal-heading"><span className="modal-icon"><FileSpreadsheet size={24}/></span><div><p className="eyebrow">GOOGLE SHEETS</p><h2>{connection ? "Your live money workbook" : "Create your Finora workbook"}</h2></div></div>
+    <p>{connection ? "Your corrections, summaries, subscriptions, and charts stay connected to this workbook." : "Finora creates a private financial dashboard in your Google Drive and updates it whenever you choose."}</p>
+
+    {permissionRequired && <div className="sheets-permission"><LockKeyhole size={18}/><div><strong>Google permission needed</strong><span>Approve access only to Sheets that Finora creates or you select.</span></div><button onClick={onAuthorize}>Continue with Google</button></div>}
+
+    {!connection ? <>
+      <label>Workbook name<input value={name} onChange={(event) => setName(event.target.value)} maxLength={120}/></label>
+      <button className="modal-action" onClick={() => onAction("create", { name })} disabled={busy}>{busy ? <><LoaderCircle className="spin" size={17}/>Creating tabs and charts…</> : <><FileSpreadsheet size={17}/>Create Finora Financial Dashboard</>}</button>
+      <div className="sheets-divider"><span>or connect an accessible spreadsheet</span></div>
+    </> : <div className="connected-sheet-card">
+      <div><span><FileSpreadsheet size={20}/></span><div><strong>{connection.name}</strong><small>{connection.stale ? "New ledger changes are ready to sync" : `Last synced ${new Date(connection.lastSyncedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`}</small></div></div>
+      <div><a href={connection.spreadsheetUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>Open Sheet</a><button onClick={() => onAction("sync")} disabled={busy}><RefreshCw className={busy ? "spin" : ""} size={14}/>Sync again</button></div>
+    </div>}
+
+    <details className="sheet-picker" open={!connection}>
+      <summary><Files size={14}/>Select another spreadsheet</summary>
+      <div className="sheet-search"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search Finora-accessible Sheets"/><button onClick={() => onLoadFiles(search)} disabled={busy}><Search size={14}/>Search</button></div>
+      {files === null ? <button className="load-sheets-button" onClick={() => onLoadFiles()} disabled={busy}>Show accessible spreadsheets</button> : files.length ? <div className="sheet-file-list">{files.map((file) => <button key={file.id} onClick={() => onAction("connect", { spreadsheetId: file.id })} disabled={busy}><FileSpreadsheet size={16}/><span><strong>{file.name}</strong><small>{file.modifiedTime ? `Updated ${new Date(file.modifiedTime).toLocaleDateString("en-IN")}` : "Google Sheet"}</small></span><ChevronRight size={15}/></button>)}</div> : <div className="sheet-files-empty">No accessible spreadsheets found. Create one above or search by name.</div>}
+    </details>
+
+    {connection && <details className="sheet-management">
+      <summary><MoreHorizontal size={15}/>Manage workbook</summary>
+      <div className="sheet-manage-row"><input value={name} onChange={(event) => setName(event.target.value)} maxLength={120}/><button onClick={() => onAction("rename", { name })} disabled={busy}><Pencil size={14}/>Rename</button><button onClick={() => onAction("copy", { name: `${name} copy` })} disabled={busy}><Copy size={14}/>Copy</button></div>
+      <div className="sheet-manage-row"><input value={folderId} onChange={(event) => setFolderId(event.target.value)} placeholder="Drive folder URL or ID"/><button onClick={() => onAction("move", { folderId: normalizedFolderId })} disabled={busy || !normalizedFolderId}><Folder size={14}/>Move</button></div>
+      <div className="sheet-manage-row"><input type="email" value={shareEmail} onChange={(event) => setShareEmail(event.target.value)} placeholder="Email to invite as editor"/><button onClick={() => onAction("share", { email: shareEmail })} disabled={busy || !shareEmail}><Share2 size={14}/>Share</button></div>
+      <div className="sheet-danger-row"><button onClick={() => onDisconnect(false)} disabled={busy}><Unlink size={14}/>Disconnect from Finora</button><button onClick={() => onDisconnect(true)} disabled={busy}><Trash2 size={14}/>Delete workbook</button></div>
+    </details>}
+
+    <small className="privacy-note"><ShieldCheck size={12}/>Finora can only work with Sheets you create or explicitly connect.</small>
+  </div></div>;
+}
+
 export default function Home() {
   const { data: session, isPending: sessionPending } = useSession();
   const [view, setView] = useState<View>("overview");
@@ -96,23 +274,28 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [webhookUrl, setWebhookUrl] = useState("");
-  const [sheetSecret, setSheetSecret] = useState("");
+  const [sheetConnection, setSheetConnection] = useState<SheetConnection | null>(null);
+  const [sheetFiles, setSheetFiles] = useState<SheetFile[] | null>(null);
+  const [sheetPermissionRequired, setSheetPermissionRequired] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(false);
+  const [reportFrequency, setReportFrequency] = useState<"weekly" | "monthly">("weekly");
   const [reportTimezone, setReportTimezone] = useState("Asia/Kolkata");
   const [accountLoadedFor, setAccountLoadedFor] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("Ask about a merchant, category, recurring charge, duplicate, or spending trend.");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [newBudgetCategory, setNewBudgetCategory] = useState<Category>("Food & Dining");
   const [newBudgetLimit, setNewBudgetLimit] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const receiptRef = useRef<HTMLInputElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const activePeriod = useMemo(() => latestPeriod(statement.transactions), [statement]);
   const currentTransactions = useMemo(() => inPeriod(statement.transactions, activePeriod), [statement, activePeriod]);
@@ -125,6 +308,17 @@ export default function Home() {
   const budgetStatuses = useMemo(() => budgetStatus(statement.transactions, budgets, activePeriod), [statement, budgets, activePeriod]);
   const health = useMemo(() => financialHealthScore(statement.transactions, budgets), [statement, budgets]);
   const week = useMemo(() => weeklyReport(statement.transactions), [statement]);
+  const weeklyReportDebits = useMemo(() => statement.transactions.filter((transaction) => transaction.type === "debit" && transaction.date.slice(0, 10) >= week.start && transaction.date.slice(0, 10) <= week.end), [statement, week.start, week.end]);
+  const weeklyReportOutflow = useMemo(() => weeklyReportDebits.reduce((total, transaction) => total + transaction.amount, 0), [weeklyReportDebits]);
+  const weeklyReportTransfers = useMemo(() => weeklyReportDebits.filter((transaction) => ["Transfers", "Investment"].includes(transaction.category)).reduce((total, transaction) => total + transaction.amount, 0), [weeklyReportDebits]);
+  const weeklyTopCategory = useMemo(() => Object.entries(weeklyReportDebits.reduce<Record<string, number>>((acc, transaction) => { acc[transaction.category] = (acc[transaction.category] || 0) + transaction.amount; return acc; }, {})).sort((a, b) => b[1] - a[1])[0], [weeklyReportDebits]);
+  const weeklyTopMerchant = useMemo(() => Object.entries(weeklyReportDebits.reduce<Record<string, number>>((acc, transaction) => { acc[transaction.merchant] = (acc[transaction.merchant] || 0) + transaction.amount; return acc; }, {})).sort((a, b) => b[1] - a[1])[0], [weeklyReportDebits]);
+  const weeklyLargest = useMemo(() => [...weeklyReportDebits].sort((a, b) => b.amount - a.amount)[0], [weeklyReportDebits]);
+  const reportDebits = useMemo(() => currentTransactions.filter((transaction) => transaction.type === "debit"), [currentTransactions]);
+  const reportOutflow = useMemo(() => reportDebits.reduce((total, transaction) => total + transaction.amount, 0), [reportDebits]);
+  const reportTopCategory = useMemo(() => Object.entries(reportDebits.reduce<Record<string, number>>((acc, transaction) => { acc[transaction.category] = (acc[transaction.category] || 0) + transaction.amount; return acc; }, {})).sort((a, b) => b[1] - a[1])[0], [reportDebits]);
+  const reportTopMerchant = useMemo(() => Object.entries(reportDebits.reduce<Record<string, number>>((acc, transaction) => { acc[transaction.merchant] = (acc[transaction.merchant] || 0) + transaction.amount; return acc; }, {})).sort((a, b) => b[1] - a[1])[0], [reportDebits]);
+  const reportLargest = useMemo(() => [...reportDebits].sort((a, b) => b.amount - a.amount)[0], [reportDebits]);
   const visibleTransactions = statement.transactions.filter((transaction) => `${transaction.merchant} ${transaction.description} ${transaction.category}`.toLowerCase().includes(search.toLowerCase()));
   const hasData = statement.transactions.length > 0;
   const userId = session?.user?.id;
@@ -133,6 +327,15 @@ export default function Home() {
     const daily = currentTransactions.filter((transaction) => transaction.type === "debit" && !["Transfers", "Investment"].includes(transaction.category)).reduce<Record<string, number>>((acc, transaction) => { const day = transaction.date.slice(0, 10); acc[day] = (acc[day] || 0) + transaction.amount; return acc; }, {});
     return Object.entries(daily).sort(([a], [b]) => a.localeCompare(b)).slice(-14).map(([, value]) => value);
   }, [currentTransactions]);
+  const answer = chatMessages[chatMessages.length - 1]?.content || "Ask about a merchant, category, recurring charge, duplicate, or spending trend.";
+
+  useEffect(() => {
+    if (!sessionPending && !session?.user) window.location.replace("/");
+  }, [sessionPending, session?.user]);
+
+  useEffect(() => {
+    if (view === "agent") chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [chatMessages, asking, view]);
 
   useEffect(() => {
     if (!userId) return;
@@ -144,6 +347,7 @@ export default function Home() {
       setStatement(result.ledger?.statement || emptyStatement);
       setBudgets(result.ledger?.budgets || []);
       setWeeklyEmailEnabled(Boolean(result.preferences?.weeklyEmailEnabled));
+      setReportFrequency(result.preferences?.frequency === "monthly" ? "monthly" : "weekly");
       setReportTimezone(result.preferences?.timezone || "Asia/Kolkata");
     }).catch((error) => !cancelled && notify(error instanceof Error ? error.message : "Could not load your account.", "bad"))
       .finally(() => !cancelled && setAccountLoadedFor(userId));
@@ -151,12 +355,51 @@ export default function Home() {
   }, [userId]);
 
   useEffect(() => {
-    if (!userId || new URLSearchParams(window.location.search).get("gmail") !== "connected") return;
+    if (!userId) return;
+    let cancelled = false;
+    fetch("/api/sheets").then(async (response) => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not load Google Sheets.");
+      if (cancelled) return;
+      setSheetConnection(result.connection || null);
+      setSynced(Boolean(result.connection && !result.connection.stale));
+    }).catch((error) => !cancelled && notify(error instanceof Error ? error.message : "Could not load Google Sheets.", "bad"));
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    fetch("/api/chats").then(async (response) => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not load chat history.");
+      if (cancelled) return;
+      const chats = Array.isArray(result.chats) ? result.chats as ChatThread[] : [];
+      setChatThreads(chats);
+      if (chats[0]) { setActiveChatId(chats[0].id); setChatMessages(chats[0].messages); }
+    }).catch((error) => !cancelled && notify(error instanceof Error ? error.message : "Could not load chat history.", "bad"));
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!userId || params.get("gmail") !== "connected") return;
+    const frequency = params.get("frequency") === "monthly" ? "monthly" : "weekly";
     window.history.replaceState({}, "", window.location.pathname);
-    void fetch("/api/account", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferences: { weeklyEmailEnabled: true, timezone: reportTimezone } }) })
-      .then(async (response) => { const result = await response.json(); if (!response.ok) throw new Error(result.error || "Could not enable weekly reports."); setWeeklyEmailEnabled(true); notify("Weekly Gmail report enabled. Your first report will arrive Sunday."); })
+    void fetch("/api/account", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferences: { weeklyEmailEnabled: true, frequency, timezone: reportTimezone } }) })
+      .then(async (response) => { const result = await response.json(); if (!response.ok) throw new Error(result.error || "Could not enable AI reports."); setWeeklyEmailEnabled(true); setReportFrequency(frequency); setView("reports"); notify(`${frequency === "monthly" ? "Monthly" : "Weekly"} Gmail report enabled.`); })
       .catch((error) => notify(error instanceof Error ? error.message : "Could not enable weekly reports.", "bad"));
   }, [userId, reportTimezone]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!userId || params.get("sheets") !== "connected") return;
+    const action = params.get("sheetAction") === "sync" ? "sync" : "create";
+    window.history.replaceState({}, "", window.location.pathname);
+    setSheetOpen(true);
+    setSheetPermissionRequired(false);
+    void performSheetAction(action);
+  }, [userId]);
 
   function notify(message: string, tone: "good" | "bad" = "good") {
     setToast({ message, tone });
@@ -169,22 +412,30 @@ export default function Home() {
     if (!response.ok) throw new Error("Your changes are visible here, but could not be saved to your account.");
   }
 
-  async function savePreferences(enabled: boolean, timezone = reportTimezone) {
-    const response = await fetch("/api/account", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferences: { weeklyEmailEnabled: enabled, timezone } }) });
+  async function savePreferences(enabled: boolean, timezone = reportTimezone, frequency: "weekly" | "monthly" = reportFrequency) {
+    const response = await fetch("/api/account", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferences: { weeklyEmailEnabled: enabled, frequency, timezone } }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Could not update report settings.");
     setWeeklyEmailEnabled(enabled);
+    setReportFrequency(frequency);
     setReportTimezone(timezone);
   }
 
-  async function enableWeeklyEmail() {
+  async function enableReport(frequency: "weekly" | "monthly" = reportFrequency) {
     if (!session?.user) return signIn.social({ provider: "google", callbackURL: "/dashboard" });
-    await authClient.linkSocial({ provider: "google", scopes: ["https://www.googleapis.com/auth/gmail.send"], callbackURL: "/dashboard?gmail=connected" });
+    await authClient.linkSocial({ provider: "google", scopes: ["https://www.googleapis.com/auth/gmail.send"], callbackURL: `/dashboard?gmail=connected&frequency=${frequency}` });
   }
 
-  async function disableWeeklyEmail() {
-    try { await savePreferences(false); notify("Weekly Gmail reports are off."); }
+  async function disableReport() {
+    try { await savePreferences(false); notify("AI report emails are off."); }
     catch (error) { notify(error instanceof Error ? error.message : "Could not update report settings.", "bad"); }
+  }
+
+  async function chooseReportFrequency(frequency: "weekly" | "monthly") {
+    setReportFrequency(frequency);
+    if (!weeklyEmailEnabled) return;
+    try { await savePreferences(true, reportTimezone, frequency); notify(`${frequency === "monthly" ? "Monthly" : "Weekly"} delivery selected.`); }
+    catch (error) { notify(error instanceof Error ? error.message : "Could not update report frequency.", "bad"); }
   }
 
   async function clearLedger() {
@@ -196,6 +447,22 @@ export default function Home() {
       setStatement(emptyStatement); setBudgets([]); setSynced(false); setAccountOpen(false); setView("overview");
       notify("Your imported ledger and budgets were removed.");
     } catch (error) { notify(error instanceof Error ? error.message : "Could not clear your ledger.", "bad"); }
+  }
+
+  async function handleSignOut() {
+    try {
+      setAccountOpen(false);
+      await signOut();
+      setStatement(emptyStatement);
+      setBudgets([]);
+      setChatMessages([]);
+      setChatThreads([]);
+      setActiveChatId(null);
+      setAccountLoadedFor(null);
+      window.location.replace("/");
+    } catch {
+      notify("Could not sign out. Please try again.", "bad");
+    }
   }
 
   function addBudget() {
@@ -275,48 +542,164 @@ export default function Home() {
     const url = URL.createObjectURL(new Blob([content], { type: mime })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `finora-report.${format === "markdown" ? "md" : format}`; anchor.click(); URL.revokeObjectURL(url); notify(`${format.toUpperCase()} report exported.`);
   }
 
-  async function syncSheets() {
-    if (!webhookUrl) return notify("Paste your Apps Script web app URL first.", "bad");
+  async function authorizeSheets(action = sheetConnection ? "sync" : "create") {
+    await authClient.linkSocial({ provider: "google", scopes: ["https://www.googleapis.com/auth/drive.file"], callbackURL: `/dashboard?sheets=connected&sheetAction=${action}` });
+  }
+
+  async function loadSheetFiles(search = "") {
     setSyncing(true);
     try {
-      const response = await fetch("/api/sheets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ webhookUrl, secret: sheetSecret, statement }) });
+      const params = new URLSearchParams({ includeFiles: "1", ...(search ? { search } : {}) });
+      const response = await fetch(`/api/sheets?${params}`);
       const result = await response.json();
-      if (!response.ok || result.error) throw new Error(result.error || "Sync failed.");
-      setSynced(true); setSheetOpen(false); notify("Summary, ledger, and charts are live in Google Sheets.");
-      if (result.url) window.open(result.url, "_blank", "noopener,noreferrer");
-    } catch (error) { notify(error instanceof Error ? error.message : "Sheets sync failed.", "bad"); }
+      if (!response.ok) {
+        if (result.permissionRequired) setSheetPermissionRequired(true);
+        throw new Error(result.error || "Could not load Google Sheets.");
+      }
+      setSheetFiles(Array.isArray(result.files) ? result.files : []);
+      setSheetPermissionRequired(false);
+    } catch (error) { notify(error instanceof Error ? error.message : "Could not load Google Sheets.", "bad"); }
+    finally { setSyncing(false); }
+  }
+
+  async function performSheetAction(action: string, payload: Record<string, string> = {}) {
+    setSyncing(true);
+    try {
+      const response = await fetch("/api/sheets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...payload }) });
+      const result = await response.json();
+      if (!response.ok) {
+        if (result.permissionRequired) {
+          setSheetPermissionRequired(true);
+          await authorizeSheets(action === "sync" ? "sync" : "create");
+          return;
+        }
+        throw new Error(result.error || "Google Sheets update failed.");
+      }
+      if (result.connection) setSheetConnection(result.connection);
+      setSheetPermissionRequired(false);
+      setSynced(true);
+      if (action === "share") notify(`Workbook shared with ${payload.email}.`);
+      else if (action === "move") notify("Workbook moved to the selected Drive folder.");
+      else if (action === "rename") notify("Workbook renamed.");
+      else if (action === "copy") notify("A connected copy of your workbook was created.");
+      else if (action === "connect") notify("Spreadsheet connected and updated with your Finora dashboard.");
+      else notify("Transactions, summaries, subscriptions, and charts are live in Google Sheets.");
+    } catch (error) { notify(error instanceof Error ? error.message : "Google Sheets update failed.", "bad"); }
+    finally { setSyncing(false); }
+  }
+
+  async function disconnectSheets(permanent: boolean) {
+    const message = permanent ? "Permanently delete this Google Sheet? This cannot be undone." : "Disconnect this Sheet from Finora? The spreadsheet will remain in Google Drive.";
+    if (!window.confirm(message)) return;
+    setSyncing(true);
+    try {
+      const response = await fetch(`/api/sheets${permanent ? "?permanent=1" : ""}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not disconnect Google Sheets.");
+      setSheetConnection(null); setSheetFiles(null); setSynced(false); setSheetOpen(false);
+      notify(permanent ? "Google Sheet deleted." : "Google Sheet disconnected. The file remains in Drive.");
+    } catch (error) { notify(error instanceof Error ? error.message : "Could not disconnect Google Sheets.", "bad"); }
     finally { setSyncing(false); }
   }
 
   async function askAgent(prompt = question) {
-    if (!prompt.trim()) return;
-    setQuestion(prompt);
+    const cleanPrompt = prompt.trim();
+    if (!cleanPrompt || asking) return;
+    const history = chatMessages.slice(-10).map(({ role, content }) => ({ role, content }));
+    const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: "user", content: cleanPrompt };
+    const id = activeChatId || crypto.randomUUID();
+    const existing = chatThreads.find((chat) => chat.id === id);
+    const now = new Date().toISOString();
+    const title = existing?.title || (cleanPrompt.length > 48 ? `${cleanPrompt.slice(0, 48).trim()}…` : cleanPrompt);
+    const nextMessages = [...chatMessages, userMessage];
+    const pendingThread: ChatThread = { id, title, messages: nextMessages, createdAt: existing?.createdAt || now, updatedAt: now };
+    setActiveChatId(id);
+    setChatMessages(nextMessages);
+    setChatThreads((current) => [pendingThread, ...current.filter((chat) => chat.id !== id)]);
+    void persistChat(pendingThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
+    setQuestion("");
     setAsking(true);
     try {
-      const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: prompt, transactions: statement.transactions, budgets }) });
-      const result = await response.json(); if (!response.ok || result.error) throw new Error(result.error || "Question failed."); setAnswer(result.answer);
-    } catch { setAnswer(answerFinanceQuestion(prompt, statement.transactions, budgets)); }
+      const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: cleanPrompt, history, transactions: statement.transactions, budgets }) });
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error || "Question failed.");
+      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: result.answer }], updatedAt: new Date().toISOString() };
+      setChatMessages(finalThread.messages);
+      setChatThreads((current) => [finalThread, ...current.filter((chat) => chat.id !== id)]);
+      void persistChat(finalThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
+    } catch {
+      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: answerFinanceQuestion(cleanPrompt, statement.transactions, budgets) }], updatedAt: new Date().toISOString() };
+      setChatMessages(finalThread.messages);
+      setChatThreads((current) => [finalThread, ...current.filter((chat) => chat.id !== id)]);
+      void persistChat(finalThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
+    }
     finally { setAsking(false); }
+  }
+
+  async function persistChat(chat: ChatThread) {
+    const response = await fetch("/api/chats", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: chat.id, title: chat.title, messages: chat.messages }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not save this chat.");
+  }
+
+  function startNewChat() {
+    if (asking) return;
+    if (!activeChatId && chatMessages.length) {
+      const firstQuestion = chatMessages.find((message) => message.role === "user")?.content || "Finora conversation";
+      const now = new Date().toISOString();
+      const chat: ChatThread = { id: crypto.randomUUID(), title: firstQuestion.length > 48 ? `${firstQuestion.slice(0, 48).trim()}…` : firstQuestion, messages: chatMessages, createdAt: now, updatedAt: now };
+      setChatThreads((current) => [chat, ...current]);
+      void persistChat(chat).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
+    }
+    setActiveChatId(null);
+    setChatMessages([]);
+    setQuestion("");
+  }
+
+  function selectChat(chat: ChatThread) {
+    if (asking) return;
+    setActiveChatId(chat.id);
+    setChatMessages(chat.messages);
+    setQuestion("");
+  }
+
+  async function deleteChat(chat: ChatThread) {
+    if (asking || !window.confirm(`Delete “${chat.title}”?`)) return;
+    const remaining = chatThreads.filter((item) => item.id !== chat.id);
+    setChatThreads(remaining);
+    if (activeChatId === chat.id) {
+      setActiveChatId(remaining[0]?.id || null);
+      setChatMessages(remaining[0]?.messages || []);
+    }
+    try {
+      const response = await fetch(`/api/chats?id=${encodeURIComponent(chat.id)}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not delete this chat.");
+    } catch (error) {
+      setChatThreads((current) => [chat, ...current]);
+      notify(error instanceof Error ? error.message : "Could not delete this chat.", "bad");
+    }
   }
 
   return (
     <main className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#" onClick={() => setView("overview")}><Mark /><span>finora</span><em>beta</em></a>
+        <a className="brand" href="#" onClick={() => setView("overview")}><Mark /><span>finora</span></a>
         <nav className={menuOpen ? "main-nav open" : "main-nav"}>
           <button className={view === "overview" ? "active" : ""} onClick={() => { setView("overview"); setMenuOpen(false); }}><LayoutDashboard size={16}/>Overview</button>
           <button className={view === "transactions" ? "active" : ""} onClick={() => { setView("transactions"); setMenuOpen(false); }}><ReceiptIndianRupee size={16}/>Transactions</button>
+          <button className={view === "reports" ? "active" : ""} onClick={() => { setView("reports"); setMenuOpen(false); }}><CalendarDays size={16}/>AI Reports</button>
           <button className={view === "agent" ? "active" : ""} onClick={() => { setView("agent"); setMenuOpen(false); }}><Bot size={16}/>Ask Finora <span className="new-dot" /></button>
         </nav>
         <div className="top-actions">
-          {session?.user && hasData && <button className="sheet-button" onClick={() => setSheetOpen(true)}>{synced ? <Check size={15}/> : <FileSpreadsheet size={16}/>}<span>{synced ? "Synced" : "Sync Sheets"}</span></button>}
+          {session?.user && hasData && <button className="sheet-button" onClick={() => { setSheetOpen(true); setSheetFiles(null); }}>{synced ? <Check size={15}/> : <FileSpreadsheet size={16}/>}<span>{synced ? "Sheets synced" : sheetConnection ? "Sync Sheets" : "Connect Sheets"}</span></button>}
           {session?.user ? <button className="avatar" onClick={() => setAccountOpen(true)} aria-label="Account menu" title={session.user.email}>{session.user.image ? <img src={session.user.image} alt=""/> : session.user.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</button> : <Button variant="outline" size="sm" onClick={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} disabled={sessionPending}><UserRound size={15}/><span>Sign in</span></Button>}
           <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Open menu"><Menu size={20}/></button>
         </div>
       </header>
 
       <section className="content-wrap">
-        {view === "overview" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <>
+        {view === "overview" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <div className="overview-layout">
           <div className="welcome-row">
             <div><p className="eyebrow"><span className="live-dot" />MONEY SNAPSHOT · {statement.period.toUpperCase()}</p><h1>Your money,<br/><span>finally legible.</span></h1></div>
             <div className="source-card"><span className="bank-mark">{statement.bankName.slice(0, 1)}</span><span><small>Source</small><strong>{statement.bankName}</strong></span><BadgeCheck size={18}/></div>
@@ -328,6 +711,14 @@ export default function Home() {
             <article className="metric-card ink-card"><div className="metric-label"><span>Net cash flow</span><Sparkles size={17}/></div><strong><NumberTicker value={summary.saved} formatter={money}/></strong><small>{summary.income ? `${summary.savingsRate.toFixed(0)}% of income retained` : "No income detected in this period"}</small><span className={`good-pill ${summary.saved < 0 ? "negative" : ""}`}>{summary.saved >= 0 ? "Positive" : "Negative"}</span></article>
             <article className="metric-card safe-card"><div className="metric-label"><span>Average payment</span><CircleHelp size={17}/></div><strong><NumberTicker value={summary.spend / Math.max(1, currentTransactions.filter((t) => t.type === "debit" && !["Transfers", "Investment"].includes(t.category)).length)} formatter={money}/></strong><small>per consumption transaction</small><span className="scribble">from this ledger</span></article>
           </div>
+
+          <article className={`panel dashboard-trend-panel ${spendTrend.length ? "" : "is-empty"}`}>
+            <div className="dashboard-trend-head">
+              <div><p className="eyebrow">SPENDING OVER TIME</p><h2>Your daily outflow</h2></div>
+              <div className="trend-periods" aria-label="Selected chart period"><span>7D</span><span className="active">14D</span><span>30D</span></div>
+            </div>
+            {spendTrend.length ? <MiniTrend values={spendTrend} large/> : <div className="panel-empty"><Activity size={20}/><strong>No spending trend yet</strong><span>Import debit transactions to build this chart.</span></div>}
+          </article>
 
           <div className="story-grid">
             <article className="panel category-panel">
@@ -377,13 +768,13 @@ export default function Home() {
               <div className="feature-head"><span><CalendarDays size={18}/></span><div><p className="eyebrow">WEEKLY AI REPORT</p><h2>{money(week.spent)} spent</h2></div></div>
               <div className="weekly-facts"><span><small>Largest category</small><strong>{week.topCategory}</strong></span><span><small>Largest merchant</small><strong>{week.topMerchant}</strong></span><span><small>Biggest expense</small><strong>{week.largestExpense ? `${week.largestExpense.merchant} · ${money(week.largestExpense.amount)}` : "None"}</strong></span></div>
               <p>{week.suggestion}</p>
-              <button className="weekly-email-button" onClick={() => session?.user ? setAccountOpen(true) : signIn.social({ provider: "google", callbackURL: "/dashboard" })}><Mail size={15}/>{weeklyEmailEnabled ? "Weekly Gmail report is on" : "Get this in Gmail every Sunday"}</button>
+              <button className="weekly-email-button" onClick={() => setView("reports")}><Mail size={15}/>{weeklyEmailEnabled ? `${reportFrequency === "monthly" ? "Monthly" : "Weekly"} Gmail report is on` : "Choose your AI report schedule"}</button>
             </article>
           </div>
 
           <div className="lower-grid">
             <article className="panel recent-panel">
-              <div className="panel-head"><div><p className="eyebrow">FRESHLY SORTED</p><h2>Recent transactions</h2></div><span className="ai-label"><Sparkles size={13}/>{statement.provider === "groq" ? "Groq" : statement.provider === "vertex" ? "Gemini" : statement.provider === "local" ? "Local parser" : "Imported"} categorized</span></div>
+              <div className="panel-head"><div><p className="eyebrow">FRESHLY SORTED</p><h2>Recent transactions</h2></div></div>
               <div className="transaction-table compact"><div className="transaction-head"><span>Merchant</span><span>Date</span><span>Category</span><span>Confidence</span><span>Amount</span></div>{currentTransactions.slice(0, 5).map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} onCategory={(category) => updateCategory(transaction.id, category)} />)}</div>
               <button className="full-row-button" onClick={() => setView("transactions")}>View all {statement.transactions.length} transactions <ChevronRight size={15}/></button>
             </article>
@@ -396,15 +787,19 @@ export default function Home() {
               <BorderBeam/>
             </article>
           </div>
-        </>)}
+        </div>)}
 
         {view === "transactions" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <section className="view-page">
-          <div className="view-heading"><div><p className="eyebrow">YOUR CLEAN LEDGER</p><h1>Transactions</h1><p>{statement.transactions.length} payments from {statement.bankName}. Click any category to correct it.</p></div><div className="view-actions"><select className="export-select" defaultValue="" onChange={(event) => { if (event.target.value) exportData(event.target.value as "csv" | "json" | "xlsx" | "markdown"); event.target.value = ""; }}><option value="" disabled>Export…</option><option value="csv">CSV</option><option value="xlsx">Excel</option><option value="json">JSON</option><option value="markdown">Markdown</option></select><button className="secondary-button" onClick={() => receiptRef.current?.click()}><Camera size={16}/>Scan receipt</button><button className="primary-button" onClick={() => fileRef.current?.click()}><UploadCloud size={16}/>Import statement</button></div></div>
+          <div className="view-heading"><div><p className="eyebrow">YOUR CLEAN LEDGER</p><h1>Transactions</h1><p>{statement.transactions.length} payments from {statement.bankName}. Click any category to correct it.</p></div><div className="view-actions"><details className="export-menu"><summary>Export <ChevronDown size={15}/></summary><div><button onClick={(event) => { void exportData("csv"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>CSV <small>Comma-separated</small></button><button onClick={(event) => { void exportData("xlsx"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Excel <small>Workbook</small></button><button onClick={(event) => { void exportData("json"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>JSON <small>Structured data</small></button><button onClick={(event) => { void exportData("markdown"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Markdown <small>Readable report</small></button></div></details><button className="secondary-button" onClick={() => receiptRef.current?.click()}><Camera size={16}/>Scan receipt</button><button className="primary-button" onClick={() => fileRef.current?.click()}><UploadCloud size={16}/>Import statement</button></div></div>
           <div className="filter-bar"><label><Search size={17}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search merchant, narration, category…"/></label><span>{visibleTransactions.length} result{visibleTransactions.length === 1 ? "" : "s"}</span></div>
           <div className="panel ledger-panel"><div className="transaction-table"><div className="transaction-head"><span>Merchant</span><span>Date</span><span>Category</span><span>Confidence</span><span>Amount</span></div>{visibleTransactions.map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} onCategory={(category) => updateCategory(transaction.id, category)} />)}</div></div>
         </section>)}
 
-        {view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <section className="agent-page">
+        {view === "reports" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ReportsPage frequency={reportFrequency} enabled={weeklyEmailEnabled} timezone={reportTimezone} period={reportFrequency === "weekly" ? `${week.start} — ${week.end}` : activePeriod} outflow={reportFrequency === "weekly" ? weeklyReportOutflow : reportOutflow} consumption={reportFrequency === "weekly" ? weeklyReportOutflow - weeklyReportTransfers : summary.spend} transfers={reportFrequency === "weekly" ? weeklyReportTransfers : summary.transfers} topCategory={(reportFrequency === "weekly" ? weeklyTopCategory : reportTopCategory)?.[0] || "None"} topMerchant={(reportFrequency === "weekly" ? weeklyTopMerchant : reportTopMerchant)?.[0] || "None"} largest={reportFrequency === "weekly" ? (weeklyLargest ? `${weeklyLargest.merchant} · ${money(weeklyLargest.amount)}` : "None") : (reportLargest ? `${reportLargest.merchant} · ${money(reportLargest.amount)}` : "None")} healthScore={health.score} healthLabel={health.label} suggestion={reportFrequency === "weekly" ? week.suggestion : (statement.insights[0] || "Keep importing transactions to receive a useful monthly suggestion.")} onFrequency={(frequency) => void chooseReportFrequency(frequency)} onTimezone={(timezone) => { setReportTimezone(timezone); if (weeklyEmailEnabled) void savePreferences(true, timezone, reportFrequency); }} onEnable={() => void enableReport()} onDisable={() => void disableReport()}/>) }
+
+        {view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ChatWorkspace chats={chatThreads} activeChatId={activeChatId} messages={chatMessages} question={question} asking={asking} transactionCount={statement.transactions.length} userName={session.user.name} onQuestion={setQuestion} onAsk={askAgent} onNewChat={startNewChat} onSelectChat={selectChat} onDeleteChat={deleteChat} endRef={chatEndRef}/>)}
+
+        {false && view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <section className="agent-page">
           <div className="agent-copy"><p className="eyebrow"><span className="live-dot"/>YOUR FINANCIAL COPILOT</p><h1>Ask your money<br/>a real question.</h1><p>Finora gives your agent a clean financial memory through MCP — not a screenshot, not a vague guess.</p><div className="agent-proof"><span><Check size={14}/>Reads your corrected categories</span><span><Check size={14}/>Answers from transaction evidence</span><span><Check size={14}/>Works inside Codex</span></div></div>
           <div className="agent-console">
             <div className="console-head"><div><Mark/><span><strong>Finora agent</strong><small><i/>MCP connected · {statement.transactions.length} transactions</small></span></div><MoreHorizontal size={19}/></div>
@@ -419,23 +814,17 @@ export default function Home() {
 
       <input ref={fileRef} type="file" accept=".pdf,.csv,.tsv,.txt,.xlsx,.xls,image/png,image/jpeg" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleFile(file); }}/>
       <input ref={receiptRef} type="file" accept="image/png,image/jpeg,.pdf" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleFile(file, true); }}/>
-      {sheetOpen && <div className="modal-backdrop" onMouseDown={() => setSheetOpen(false)}><div className="modal" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="modal-close" onClick={() => setSheetOpen(false)}><X size={18}/></button><span className="modal-icon"><FileSpreadsheet size={24}/></span><p className="eyebrow">ONE-TAP REPORTING</p><h2>Send it to Sheets</h2><p>Finora will create raw transactions, monthly, category, merchant and subscription summaries, pivot analysis, and charts in your own Google Sheet.</p>
-        <label>Apps Script web app URL<input value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://script.google.com/macros/s/…/exec"/></label><label>Sync secret <small>(optional)</small><input type="password" value={sheetSecret} onChange={(event) => setSheetSecret(event.target.value)} placeholder="Matches FINORA_SECRET in Code.gs"/></label>
-        <details><summary>How do I get this URL?</summary><ol><li>Open the included <code>integrations/google-sheets/Code.gs</code>.</li><li>Paste it into a new Apps Script project.</li><li>Deploy as a web app, then paste its URL here.</li></ol></details>
-        <button className="modal-action" onClick={syncSheets} disabled={syncing}>{syncing ? <><LoaderCircle className="spin" size={17}/>Building your sheet…</> : <><Cloud size={17}/>Create report in Google Sheets</>}</button>
-        <small className="privacy-note"><LockKeyhole size={12}/>Data goes only to the Apps Script URL you provide.</small>
-      </div></div>}
+      {sheetOpen && <SheetsModal connection={sheetConnection} files={sheetFiles} busy={syncing} permissionRequired={sheetPermissionRequired} onClose={() => setSheetOpen(false)} onAuthorize={() => void authorizeSheets()} onAction={(action, payload) => void performSheetAction(action, payload)} onLoadFiles={(query) => void loadSheetFiles(query)} onDisconnect={(permanent) => void disconnectSheets(permanent)}/>}
 
       {accountOpen && session?.user && <div className="modal-backdrop" onMouseDown={() => setAccountOpen(false)}><div className="modal account-modal" onMouseDown={(event) => event.stopPropagation()}>
         <button className="modal-close" onClick={() => setAccountOpen(false)}><X size={18}/></button>
         <div className="account-person">{session.user.image ? <img src={session.user.image} alt=""/> : <span><UserRound size={22}/></span>}<div><p className="eyebrow">FINORA ACCOUNT</p><h2>{session.user.name}</h2><small>{session.user.email}</small></div></div>
-        <div className="report-setting"><span className="modal-icon"><Mail size={22}/></span><div><h3>Sunday money story</h3><p>Finora sends your weekly spend, largest category, health score, subscriptions, and one useful suggestion to this Gmail address.</p></div></div>
-        <label>Report timezone<select value={reportTimezone} onChange={(event) => { setReportTimezone(event.target.value); if (weeklyEmailEnabled) void savePreferences(true, event.target.value); }}><option value="Asia/Kolkata">India · Asia/Kolkata</option><option value="America/New_York">US · New York</option><option value="America/Los_Angeles">US · Los Angeles</option><option value="Europe/London">UK · London</option><option value="Asia/Singapore">Singapore</option></select></label>
-        {weeklyEmailEnabled ? <button className="modal-action report-off" onClick={disableWeeklyEmail}><Mail size={16}/>Turn off weekly email</button> : <button className="modal-action" onClick={enableWeeklyEmail}><Mail size={16}/>Allow Gmail & enable report</button>}
+        <div className="report-setting"><span className="modal-icon"><Mail size={22}/></span><div><h3>{reportFrequency === "monthly" ? "Monthly" : "Weekly"} money story</h3><p>Finora sends your total outflow, category and merchant highlights, health score, subscriptions, and one useful suggestion to this Gmail address.</p></div></div>
+        <label>Report timezone<select value={reportTimezone} onChange={(event) => { setReportTimezone(event.target.value); if (weeklyEmailEnabled) void savePreferences(true, event.target.value, reportFrequency); }}><option value="Asia/Kolkata">India · Asia/Kolkata</option><option value="America/New_York">US · New York</option><option value="America/Los_Angeles">US · Los Angeles</option><option value="Europe/London">UK · London</option><option value="Asia/Singapore">Singapore</option></select></label>
+        {weeklyEmailEnabled ? <button className="modal-action report-off" onClick={disableReport}><Mail size={16}/>Turn off AI report email</button> : <button className="modal-action" onClick={() => void enableReport()}><Mail size={16}/>Allow Gmail & enable report</button>}
         <small className="privacy-note"><ShieldCheck size={12}/>Finora can send this report, but cannot read your inbox.</small>
         {hasData && <button className="clear-data-link" onClick={clearLedger}><Trash2 size={14}/>Clear imported data</button>}
-        <button className="sign-out-link" onClick={() => { setAccountOpen(false); setStatement(emptyStatement); setBudgets([]); setAccountLoadedFor(null); signOut(); }}><LogOut size={15}/>Sign out</button>
+        <button className="sign-out-link" onClick={handleSignOut}><LogOut size={15}/>Sign out</button>
         {accountLoading && <div className="account-loading"><LoaderCircle className="spin" size={18}/></div>}
       </div></div>}
 

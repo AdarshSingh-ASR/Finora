@@ -56,9 +56,9 @@ CRON_SECRET=another-long-random-secret
 Create them step by step:
 
 1. Generate the two secrets. In PowerShell, run `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` twice. Use one value for `BETTER_AUTH_SECRET` and the other for `CRON_SECRET`.
-2. Open [Google Cloud Console](https://console.cloud.google.com/), create or select a project, then open **APIs & Services → Library** and enable **Gmail API**.
+2. Open [Google Cloud Console](https://console.cloud.google.com/), create or select a project, then enable **Gmail API**, **Google Sheets API**, and **Google Drive API**. Drive is used only for user-invoked select, move, copy, share, and delete controls.
 3. Open **Google Auth Platform → Branding**, configure the app name, support email, and developer contact. For hackathon testing, keep the app in testing and add each judge/demo Google account under **Audience → Test users**.
-4. Under **Data Access**, add the basic identity scopes (`openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`) and `https://www.googleapis.com/auth/gmail.send`. A public production launch may require Google's OAuth verification for the Gmail scope.
+4. Under **Data Access**, add the basic identity scopes (`openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`), `https://www.googleapis.com/auth/gmail.send`, and `https://www.googleapis.com/auth/drive.file`. The narrow Drive scope limits Finora to files it creates or the user explicitly connects.
 5. Open **Clients → Create client → Web application**. Add `http://localhost:3000` as an authorized JavaScript origin.
 6. Add `http://localhost:3000/api/auth/callback/google` as an authorized redirect URI. For the deployed site, also add `https://YOUR-DOMAIN/api/auth/callback/google` and use `https://YOUR-DOMAIN` for `BETTER_AUTH_URL` in that environment.
 7. Copy the client ID and client secret into `.env.local`, run `npm run db:migrate:local` once, then restart `npm run dev`.
@@ -98,14 +98,28 @@ The MCP server is the product surface: agents can chain focused tools without tr
 
 The agent workflow lives in [`skills/finora-money/SKILL.md`](skills/finora-money/SKILL.md).
 
+## Install the authenticated Finora skill
+
+[`skills/finora-finance`](skills/finora-finance) is the portable Agent Skills package for a user's cloud Finora account. It uses a browser-based Google approval flow and a revocable Finora token; Google credentials and statement data are never stored in the skill.
+
+```bash
+node skills/finora-finance/scripts/install.mjs https://your-finora-domain.example
+```
+
+Then invoke `$finora-finance skill-sync` in Codex, `/finance skill-sync` in Claude, or ask another Agent Skills-compatible client to use Finora naturally. The first call returns a short-lived verification link. After approval, the local client remembers the account until the 90-day token expires, the user logs out, or the token is revoked.
+
+The authenticated surface is exposed at `/api/agent`; it delegates statement import, categorization, merchant cleanup, finance questions, historical analysis, subscriptions, duplicates, anomalies, reports, and native Google Sheets sync to Finora's server-side logic.
+
 ## Connect Google Sheets
 
-1. Create a Google Sheet and open **Extensions → Apps Script**.
-2. Paste [`integrations/google-sheets/Code.gs`](integrations/google-sheets/Code.gs).
-3. Deploy it as a web app that runs as you. Optionally set `FINORA_SECRET` first.
-4. In Finora, choose **Sync Sheets**, paste the deployed URL and matching secret.
+The dashboard uses the signed-in user's Google OAuth connection directly; no Apps Script URL, sync secret, API key, or service account is required.
 
-Finora creates seven tabs: Finora Summary, Transactions, Monthly Summary, Category Summary, Merchant Summary, Subscriptions, and Pivot Analysis. It also builds category and month comparison charts. Model requests go to your Google Cloud project, or to your Groq project only when the text fallback is needed; Sheets data goes only to the Apps Script URL you provide.
+1. Enable **Google Sheets API** and **Google Drive API** in the project used by `GOOGLE_CLIENT_ID`.
+2. Add `https://www.googleapis.com/auth/drive.file` under **Google Auth Platform → Data Access**.
+3. In Finora, choose **Connect Sheets**. Google asks for the additional permission only when this feature is used.
+4. Create **Finora Financial Dashboard**, or select a spreadsheet previously created or connected through Finora.
+
+Finora maintains Transactions, Monthly Summary, Category Summary, Merchant Summary, Subscriptions, Insights, and Charts tabs. The connection is stored per user in D1 and every sync uses the user's encrypted Better Auth token. Users can open, resync, rename, copy, move, share, disconnect, or delete the workbook. The legacy Apps Script integration remains available only for local MCP export tools, which cannot initiate interactive browser OAuth.
 
 ## Advanced intelligence
 
