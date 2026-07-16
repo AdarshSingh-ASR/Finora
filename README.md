@@ -1,177 +1,403 @@
+<div align="center">
+
 # Finora
 
-**Statement in. Money story out.** Finora turns bank, card, and UPI statements into an explainable ledger, useful spending insights, a polished Google Sheets report, and a financial memory that agents can query through MCP.
+### Every statement tells one money story.
 
-Built for **OpenAI Build Week 2026 — Apps for your life**.
+Turn bank, credit-card, and UPI statements into a clean financial memory that works in a dashboard, Google Sheets, Codex, Claude, and other MCP-compatible agents.
 
-## Why this can win
+[![OpenAI Build Week](https://img.shields.io/badge/OpenAI_Build_Week-Apps_for_Your_Life-111111?style=flat-square)](https://openai.devpost.com/)
+[![Node.js](https://img.shields.io/badge/Node.js-22.13%2B-247a55?style=flat-square)](https://nodejs.org/)
+[![MCP](https://img.shields.io/badge/MCP-enabled-11a683?style=flat-square)](./mcp/server.mjs)
+[![Agent Skill](https://img.shields.io/badge/Agent_Skill-installable-3b82f6?style=flat-square)](./skills/finora-finance)
 
-Most expense trackers start after the work: users must connect a supported bank, fix a brittle CSV, or label every payment. Finora starts with the artifact everyone already has — a statement. Gemini 2.5 Flash on Vertex AI reads native or scanned PDFs across inconsistent bank formats, normalizes messy UPI narrations, and explains every category. Groq GPT-OSS 20B is the automatic text fallback. Corrections remain visible and agent-safe.
+[Demo](#demo) · [How it works](#how-it-works) · [Run locally](#run-locally) · [MCP and Skill](#mcp-server-and-agent-skill)
 
-The result is not trapped in one UI. It becomes:
+</div>
 
-- a fast consumer money snapshot;
-- a clean transaction ledger with confidence and evidence;
-- a Google Sheet with category rollups and charts;
-- an MCP server and reusable Codex skill.
+![Finora — statement in, money story out](./public/og-v2.png)
 
-## Run locally
+## Why we built Finora
 
-Requirements: Node.js 22.13+.
+Every month, people receive a bank statement. Most of us glance at the balance, notice a few large payments, and close it. The useful details—where the money went, which subscription renewed, whether a merchant charged twice, or how this month compares with the last—stay buried in rows of inconsistent transaction text.
+
+Getting those answers usually means cleaning a spreadsheet, categorizing every payment, and rebuilding the same report again next month. We built Finora because understanding your own money should not require that much maintenance.
+
+Finora starts with the statement you already have and turns it into a ledger you can inspect, correct, ask questions about, and use anywhere.
+
+## What Finora is
+
+Finora is a statement-first personal finance application. Upload a PDF, CSV, Excel file, screenshot, credit-card statement, or UPI history and Finora will:
+
+1. extract the transactions into one canonical schema;
+2. clean noisy merchant names and separate income, consumption, investments, and person-to-person transfers;
+3. categorize each transaction with a confidence score and plain-language reason;
+4. surface subscriptions, duplicates, anomalies, trends, budgets, and monthly insights;
+5. make the resulting ledger available in the dashboard, Google Sheets, and AI agents.
+
+Raw uploads are processed in the request and are not kept. Only the normalized ledger is saved when a signed-in user chooses to persist it.
+
+## Why it is not another expense tracker
+
+| Typical expense tracker | Finora |
+| --- | --- |
+| Works with a limited list of bank connections | Starts with statements from any bank, card, or UPI app |
+| Breaks when columns or narrations change | Normalizes inconsistent tables and messy payment descriptions into one schema |
+| Treats every debit as spending | Keeps consumption, investments, and P2P transfers visibly separate |
+| Shows category totals | Explains categories, flags uncertainty, and finds subscriptions, duplicates, and anomalies |
+| Keeps insights inside one dashboard | Exposes focused MCP tools and an installable Agent Skill |
+| Requires manual spreadsheet upkeep | Creates and refreshes a structured Google Sheets dashboard with charts |
+
+## Key features
+
+| Area | What is implemented |
+| --- | --- |
+| Statement intake | PDF, CSV, XLS/XLSX, screenshots, receipt images, bank exports, card statements, and UPI history |
+| Explainable ledger | Merchant normalization, categories, confidence scores, reasons, and user corrections |
+| Spending intelligence | Monthly summaries, category and merchant trends, budgets, financial-health score, and weekly/monthly reports |
+| Pattern detection | Recurring subscriptions, estimated renewals, annualized cost, possible duplicates, and unusual transactions |
+| Natural-language queries | Ask about food, travel, merchants, periods, subscriptions, duplicates, budgets, or any imported transaction |
+| Google Sheets | Create or connect a workbook; sync transactions, summaries, merchants, categories, subscriptions, insights, and charts |
+| Agent access | Local MCP server plus an authenticated Agent Skill for Codex, Claude, and compatible clients |
+| Account security | Google sign-in, encrypted OAuth tokens, scoped Sheets/Gmail consent, revocable agent tokens, and per-user D1 storage |
+
+Examples of questions Finora can answer:
+
+```text
+How much did I spend on food this month?
+What was my biggest expense last week?
+Compare this month with the previous month.
+Show every Amazon transaction.
+Which subscriptions renewed recently?
+Did any merchant charge me twice?
+How much did I spend on travel this year?
+```
+
+Finora includes person-to-person transfers and investments in total money movement by default, while showing them separately from consumption. It excludes them only when the user asks.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["Bank · Card · UPI statement"] --> B["Extract and normalize"]
+    B --> C["Canonical transaction ledger"]
+    C --> D["Categories + confidence"]
+    D --> E["Subscriptions · duplicates · anomalies"]
+    E --> F["Finora dashboard"]
+    E --> G["Google Sheets + charts"]
+    E --> H["MCP tools"]
+    E --> I["Authenticated Agent Skill"]
+    H --> J["Codex / compatible agents"]
+    I --> J
+```
+
+The app uses a structured transaction contract throughout the web app, Sheets exporter, reports, MCP server, and Agent Skill. A correction made to the ledger therefore changes every downstream view without maintaining separate copies of the same financial data.
+
+## Architecture
+
+```mermaid
+flowchart TB
+    UI["Next.js + React interface"]
+    AUTH["Better Auth + Google OAuth"]
+    API["Finora API routes"]
+    AI["Statement intelligence provider"]
+    CORE["Deterministic finance engine"]
+    DB["Cloudflare D1"]
+    SHEETS["Google Sheets + Drive APIs"]
+    GMAIL["Gmail send scope"]
+    MCP["Local MCP server"]
+    SKILL["Remote Agent Skill API"]
+
+    UI --> AUTH
+    UI --> API
+    API --> AI
+    API --> CORE
+    API --> DB
+    API --> SHEETS
+    API --> GMAIL
+    MCP --> CORE
+    SKILL --> API
+```
+
+### Main components
+
+- **Web application:** Next.js/React UI built with Vinext for Cloudflare Workers.
+- **Finance engine:** deterministic summaries, comparisons, subscriptions, duplicates, anomalies, budgets, merchant cleanup, and fallback question answering.
+- **Statement intelligence:** multimodal normalization for unfamiliar documents, with a deterministic CSV path that works without an AI credential.
+- **Persistence:** Cloudflare D1 stores accounts, sessions, normalized ledgers, budgets, chat history, report settings, Sheets connections, and hashed agent tokens.
+- **Google integrations:** Better Auth requests `drive.file` and `gmail.send` only when the relevant feature is enabled.
+- **Agent surfaces:** a local composable MCP server and a remote, authenticated Agent Skill backed by Finora's API.
+
+## MCP server and Agent Skill
+
+The MCP server is a product surface, not a single “do everything” wrapper. Agents can choose the smallest tool needed and stop before a write.
+
+| Workflow | Focused MCP tools |
+| --- | --- |
+| Parse | `parse_statement` |
+| Clean and classify | `normalize_merchants`, `categorize_transactions` |
+| Review and save | `save_transactions`, `correct_category`, `search_transactions` |
+| Understand | `summarize_transactions`, `monthly_summary`, `merchant_analysis`, `spending_trends`, `compare_months`, `answer_finance_question` |
+| Protect | `detect_subscriptions`, `find_duplicate_transactions`, `detect_spending_anomalies`, `budget_status`, `financial_health_score` |
+| Export | `sync_to_sheet`, `export_sheet` |
+
+Run the local MCP server:
 
 ```bash
-npm install
-copy .env.example .env.local
-npm run dev
+npm run mcp
 ```
 
-Open the printed local URL to view the Finora landing page, then choose **Analyze a statement** to sign in and enter `/dashboard`. Every account starts with an empty ledger: the dashboard renders only transactions imported by that user. CSV statements can use the deterministic local parser; PDFs, screenshots, and unfamiliar formats require Vertex AI.
-
-Add `GOOGLE_VERTEX_CREDENTIALS` to `.env.local` to enable Gemini 2.5 Flash parsing for PDFs, scanned statements, screenshots, and unfamiliar formats. The value can be one-line Google service-account JSON or its base64 encoding. Set `GROQ_API_KEY` to enable the automatic `openai/gpt-oss-20b` fallback for CSV/text categorization and finance questions.
-
-```env
-GOOGLE_VERTEX_CREDENTIALS={"type":"service_account","project_id":"..."}
-GOOGLE_VERTEX_LOCATION=global
-GOOGLE_VERTEX_MODEL=gemini-2.5-flash
-GROQ_API_KEY=
-GROQ_MODEL=openai/gpt-oss-20b
-```
-
-The Vertex service account needs permission to invoke Vertex AI models in its project, and the Vertex AI API must be enabled. Keep the JSON private and never commit `.env`.
-
-## Google sign-in and weekly Gmail reports
-
-Finora uses Better Auth with Google OAuth. A signed-in user's corrected ledger, budgets, and report preference are stored in D1 under that user's ID. Gmail access is requested separately and only when the user enables the Sunday report; the requested scope can send mail but cannot read the inbox.
-
-### Credentials to add
-
-```env
-BETTER_AUTH_SECRET=generate-a-random-32-byte-secret
-BETTER_AUTH_URL=http://localhost:3000
-GOOGLE_CLIENT_ID=your-web-oauth-client.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
-CRON_SECRET=another-long-random-secret
-```
-
-Create them step by step:
-
-1. Generate the two secrets. In PowerShell, run `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` twice. Use one value for `BETTER_AUTH_SECRET` and the other for `CRON_SECRET`.
-2. Open [Google Cloud Console](https://console.cloud.google.com/), create or select a project, then enable **Gmail API**, **Google Sheets API**, and **Google Drive API**. Drive is used only for user-invoked select, move, copy, share, and delete controls.
-3. Open **Google Auth Platform → Branding**, configure the app name, support email, and developer contact. For hackathon testing, keep the app in testing and add each judge/demo Google account under **Audience → Test users**.
-4. Under **Data Access**, add the basic identity scopes (`openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`), `https://www.googleapis.com/auth/gmail.send`, and `https://www.googleapis.com/auth/drive.file`. The narrow Drive scope limits Finora to files it creates or the user explicitly connects.
-5. Open **Clients → Create client → Web application**. Add `http://localhost:3000` as an authorized JavaScript origin.
-6. Add `http://localhost:3000/api/auth/callback/google` as an authorized redirect URI. For the deployed site, also add `https://YOUR-DOMAIN/api/auth/callback/google` and use `https://YOUR-DOMAIN` for `BETTER_AUTH_URL` in that environment.
-7. Copy the client ID and client secret into `.env.local`, run `npm run db:migrate:local` once, then restart `npm run dev`.
-
-Google only returns a durable refresh token during an offline consent flow. Finora configures Better Auth with `accessType: "offline"` and a consent prompt, and Better Auth encrypts OAuth tokens before storing them.
-
-### Run weekly delivery
-
-`POST /api/reports/weekly` is protected by `CRON_SECRET`. The included Worker scheduler invokes it hourly; Finora sends at 8:00 AM Sunday in each opted-in user's timezone and suppresses repeat sends for six days. To test immediately:
-
-```powershell
-Invoke-RestMethod -Method Post -Headers @{ Authorization = "Bearer $env:CRON_SECRET" } -Uri "http://localhost:3000/api/reports/weekly?force=1"
-```
-
-The D1 schema and migration are in [`db/schema.ts`](db/schema.ts) and [`drizzle/0000_icy_thena.sql`](drizzle/0000_icy_thena.sql).
-
-## Use it from Codex through MCP
-
-The repository includes `.codex/config.toml`; from this project, restart Codex so the `finora` MCP server is discovered. Or add it manually:
+The repository includes [`.codex/config.toml`](./.codex/config.toml), so Codex can discover the server when opened from this project. It can also be registered manually:
 
 ```bash
 codex mcp add finora -- node mcp/server.mjs
 ```
 
-The MCP server is the product surface: agents can chain focused tools without triggering unwanted side effects.
+### Install the authenticated Finora skill
 
-| Stage | Tools |
-| --- | --- |
-| Extract | `parse_statement` |
-| Clean and classify | `normalize_merchants`, `categorize_transactions` |
-| Review and persist | `save_transactions`, `correct_category`, `search_transactions` |
-| Understand | `summarize_transactions`, `monthly_summary`, `merchant_analysis`, `spending_trends`, `compare_months`, `answer_finance_question` |
-| Protect | `detect_subscriptions`, `find_duplicate_transactions`, `detect_spending_anomalies`, `budget_status`, `financial_health_score` |
-| Export | `sync_to_sheet`, `export_sheet` |
-
-`import_statement`, `get_spending_summary`, `list_transactions`, and `sync_to_google_sheets` remain as backward-compatible convenience tools.
-
-The agent workflow lives in [`skills/finora-money/SKILL.md`](skills/finora-money/SKILL.md).
-
-## Install the authenticated Finora skill
-
-[`skills/finora-finance`](skills/finora-finance) is the portable Agent Skills package for a user's cloud Finora account. It uses a browser-based Google approval flow and a revocable Finora token; Google credentials and statement data are never stored in the skill.
+The [`finora-finance`](./skills/finora-finance) skill connects an agent to the user's cloud Finora account. On first use it returns a short-lived browser link. Google sign-in happens on Finora's domain; the skill receives a revocable Finora token, never the user's Google credentials.
 
 ```bash
 node skills/finora-finance/scripts/install.mjs https://your-finora-domain.example
 ```
 
-Then invoke `$finora-finance skill-sync` in Codex, `/finance skill-sync` in Claude, or ask another Agent Skills-compatible client to use Finora naturally. The first call returns a short-lived verification link. After approval, the local client remembers the account until the 90-day token expires, the user logs out, or the token is revoked.
+Invoke it in Codex:
 
-The authenticated surface is exposed at `/api/agent`; it delegates statement import, categorization, merchant cleanup, finance questions, historical analysis, subscriptions, duplicates, anomalies, reports, and native Google Sheets sync to Finora's server-side logic.
-
-## Connect Google Sheets
-
-The dashboard uses the signed-in user's Google OAuth connection directly; no Apps Script URL, sync secret, API key, or service account is required.
-
-1. Enable **Google Sheets API** and **Google Drive API** in the project used by `GOOGLE_CLIENT_ID`.
-2. Add `https://www.googleapis.com/auth/drive.file` under **Google Auth Platform → Data Access**.
-3. In Finora, choose **Connect Sheets**. Google asks for the additional permission only when this feature is used.
-4. Create **Finora Financial Dashboard**, or select a spreadsheet previously created or connected through Finora.
-
-Finora maintains Transactions, Monthly Summary, Category Summary, Merchant Summary, Subscriptions, Insights, and Charts tabs. The connection is stored per user in D1 and every sync uses the user's encrypted Better Auth token. Users can open, resync, rename, copy, move, share, disconnect, or delete the workbook. The legacy Apps Script integration remains available only for local MCP export tools, which cannot initiate interactive browser OAuth.
-
-## Advanced intelligence
-
-- Merchant normalization across noisy bank and UPI narrations
-- Monthly comparisons and category-level change detection
-- Subscription cadence, estimated renewal, and annualized cost
-- Same-merchant, same-amount duplicate detection within two minutes
-- New high-value merchant and category-jump anomalies
-- Editable budgets with 80% warnings and over-budget states
-- Transparent financial health score with a four-part breakdown
-- Weekly spending report and natural-language ledger questions
-- Receipt image intake and CSV, Excel, JSON, Markdown, and Sheets exports
-
-## Architecture
-
-```mermaid
-flowchart LR
-  A["Bank / UPI statement"] --> B["Finora web app"]
-  B --> C["Vertex AI · Gemini 2.5 Flash"]
-  C --> D["Normalized + explained ledger"]
-  B -. text fallback .-> I["Groq · GPT-OSS 20B"]
-  I --> D
-  D --> E["Consumer dashboard"]
-  D --> F["Google Sheets + charts"]
-  D --> G["Finora MCP server"]
-  G --> H["Codex + finora-money skill"]
+```text
+$finora-finance skill-sync
 ```
 
-The web endpoint uses Responses API file inputs for PDFs/images and Structured Outputs for a strict ledger schema. CSV/XLSX is converted to text; without a key, CSV uses a deterministic parser and transparent lower confidence.
+Or through the included Claude command:
+
+```text
+/finance skill-sync
+```
+
+After pairing, users can import statements, ask questions, inspect patterns, correct categories, manage budgets, sync Sheets, and configure reports directly from the agent. See the [Skill instructions](./skills/finora-finance/SKILL.md) and [agent API reference](./skills/finora-finance/references/api.md).
+
+## Google Sheets integration
+
+Finora uses the signed-in user's Google connection. It does not require an Apps Script URL, shared secret, or service account for Sheets access.
+
+On the first sync, the user grants the narrow `drive.file` scope. Finora can then create a **Finora Financial Dashboard** or update a workbook the user explicitly connected. The workbook contains:
+
+- Transactions
+- Monthly Summary
+- Category Summary
+- Merchant Summary
+- Subscriptions
+- Insights
+- Charts
+
+Users can open, resync, rename, copy, move, share, disconnect, or delete the workbook from Finora. Future syncs update the same file.
+
+## Built with Codex and GPT-5.6
+
+Finora was built during [OpenAI Build Week](https://openai.devpost.com/) for the **Apps for Your Life** track. Codex and GPT-5.6 were part of the development loop from the first architecture sketch to the final verification pass.
+
+### Codex
+
+We used Codex throughout the repository, not only for isolated code generation. It helped us:
+
+- implement and refactor the statement pipeline, dashboard, authentication, Google integrations, MCP server, and Agent Skill;
+- trace bugs across UI state, API routes, D1 persistence, OAuth scopes, and generated Sheets;
+- turn product feedback and screenshots into precise interaction and layout changes;
+- write migrations, tests, validation scripts, and reproducible setup instructions;
+- run builds and inspect the real application after changes instead of stopping at code suggestions.
+
+The largest acceleration came from keeping design, implementation, debugging, and verification in one continuous Codex workflow. That made it practical to iterate on the complete product rather than optimize one disconnected prototype.
+
+### GPT-5.6
+
+GPT-5.6 was used as our architecture and product-design partner inside that workflow. We used it for:
+
+- deciding where deterministic finance logic should end and model-based normalization should begin;
+- designing focused MCP tools and the authenticated skill flow;
+- reviewing privacy boundaries around raw statements, Google OAuth, and agent tokens;
+- improving categorization and finance-question prompts around transfers, uncertainty, and evidence;
+- reviewing code and product flows for failure cases before the final implementation pass.
+
+Supporting services handle statement inference and deployment, but Codex and GPT-5.6 shaped how Finora was designed, built, reviewed, and shipped.
+
+## Run locally
+
+### Prerequisites
+
+- Node.js 22.13 or newer
+- npm
+- A Google Cloud project for sign-in and optional Gmail/Sheets features
+- Cloudflare Wrangler for the local D1 database
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/AdarshSingh-ASR/Finora.git
+cd Finora
+npm install
+```
+
+### 2. Create the environment file
+
+macOS/Linux:
+
+```bash
+cp .env.example .env
+```
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Minimum account configuration:
+
+```env
+BETTER_AUTH_SECRET=generate-a-long-random-secret
+BETTER_AUTH_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=your-google-oauth-client-id
+GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
+CRON_SECRET=generate-another-long-random-secret
+```
+
+Optional statement-intelligence configuration is documented in [`.env.example`](./.env.example). Without it, judges can still test the deterministic CSV parser using [`samples/upi-statement.csv`](./samples/upi-statement.csv).
+
+Generate secure local secrets with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+### 3. Configure Google OAuth
+
+In [Google Cloud Console](https://console.cloud.google.com/):
+
+1. configure the OAuth consent screen and add your test accounts;
+2. enable Gmail, Google Sheets, and Google Drive APIs;
+3. add `http://localhost:3000` as an authorized JavaScript origin;
+4. add `http://localhost:3000/api/auth/callback/google` as an authorized redirect URI;
+5. add `https://www.googleapis.com/auth/gmail.send` and `https://www.googleapis.com/auth/drive.file` under Data Access.
+
+The Gmail and Drive permissions are requested only when a user enables reports or Sheets sync.
+
+### 4. Prepare D1 and start the app
+
+```bash
+npm run db:migrate:local
+npm run dev
+```
+
+Open the URL printed by the development server. Sign in, upload [`samples/upi-statement.csv`](./samples/upi-statement.csv), and the dashboard will populate with real results from that file—there is no seeded dashboard data.
+
+### Useful commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the local app |
+| `npm run build` | Build the Cloudflare/Vinext application |
+| `npm test` | Build and run the automated checks |
+| `npm run lint` | Run ESLint |
+| `npm run mcp` | Start the Finora MCP server |
+| `npm run mcp:inspect` | Open the MCP inspector |
+| `npm run db:migrate:local` | Apply D1 migrations locally |
+
+## Deployment
+
+Finora currently targets Cloudflare Workers and D1. Before deploying:
+
+1. replace the placeholder D1 database ID in [`wrangler.jsonc`](./wrangler.jsonc);
+2. add production secrets to Cloudflare;
+3. set `BETTER_AUTH_URL` to the production origin;
+4. add the production Google OAuth origin and callback;
+5. apply the D1 migrations remotely.
+
+```bash
+npx wrangler login
+npx wrangler d1 migrations apply DB --remote
+npm run build
+```
+
+## Demo
+
+> **Live demo:** add the deployed Cloudflare URL here before submitting.
+
+> **Demo video:** add the public YouTube link here. OpenAI Build Week requires a video under three minutes showing the working project and explaining how Codex and GPT-5.6 were used.
+
+Suggested judge walkthrough:
+
+1. Upload the redacted sample statement.
+2. Show merchant cleanup, categories, confidence, and transfer separation.
+3. Open subscriptions, duplicates, anomalies, and the month comparison.
+4. Ask Finora a natural-language question and inspect the supporting transactions.
+5. Sync the ledger to Google Sheets and open the generated charts.
+6. Run `$finora-finance skill-sync` in Codex and ask for the same result through the skill.
+
+### Screenshots and GIFs
+
+The repository already includes the social preview above. Add the final production captures here before submission:
+
+<!-- Replace these placeholders with compressed assets under public/demo/. -->
+
+- `[Landing page GIF — statement → ledger → report]`
+- `[Dashboard screenshot — overview and trends]`
+- `[Ask Finora screenshot — natural-language answer]`
+- `[Google Sheets screenshot — generated tabs and charts]`
+- `[Codex screenshot — Finora skill in use]`
+
+## Project structure
+
+```text
+Finora/
+├── app/                     # Landing page, dashboard, auth, and API routes
+│   └── api/
+│       ├── agent/           # Authenticated skill API
+│       ├── agent-auth/      # Short-lived account pairing flow
+│       ├── categorize/      # Statement extraction and categorization
+│       ├── reports/         # Scheduled AI reports
+│       └── sheets/          # Native Google Sheets actions
+├── components/              # Reusable UI components
+├── db/                      # D1 schema and database access
+├── drizzle/                 # Versioned D1 migrations
+├── lib/                     # Finance engine, auth, AI, Sheets, and email logic
+├── mcp/                     # Composable MCP server
+├── samples/                 # Judge-friendly sample statements
+├── skills/
+│   ├── finora-finance/      # Installable authenticated Agent Skill
+│   └── finora-money/        # Local MCP workflow skill
+├── tests/                   # Build, MCP, and provider tests
+└── worker/                  # Cloudflare Worker and report scheduler
+```
 
 ## Privacy and safety
 
-- No statement content is logged.
-- API keys stay server-side.
-- Raw uploads are processed in-request and are not persisted by the web app.
-- Signed-in users explicitly persist only the normalized ledger and budgets; raw statement files are never stored.
-- Better Auth encrypts Google access and refresh tokens at rest in D1.
-- MCP data is local in `.finora/ledger.json`.
-- Confidence and explanations are first-class; the UI never hides uncertainty.
-- Finora is an information tool, not financial, investment, tax, or legal advice.
+- Raw statements are processed in-request and are not stored.
+- Statement contents, account identifiers, API keys, and OAuth tokens are never logged.
+- Better Auth encrypts Google access and refresh tokens in D1.
+- Agent access tokens are stored as hashes and can be revoked.
+- The Agent Skill never receives the user's Google password or OAuth token.
+- Confidence and explanations remain visible so uncertain classifications can be reviewed.
+- Finora provides factual ledger analysis, not investment, tax, legal, or credit advice.
 
-## Hackathon demo in 150 seconds
+## Future improvements
 
-1. **0:00–0:20** — Problem: bank exports are messy and trackers support only a subset of banks.
-2. **0:20–0:55** — Drop a real redacted statement; show Gemini 2.5 Flash normalizing merchants and explaining categories.
-3. **0:55–1:20** — Correct one low-confidence transfer; show every metric update from the saved ledger.
-4. **1:20–1:45** — Sync to Google Sheets; open the generated summary and chart.
-5. **1:45–2:20** — In Codex, ask “What can I safely spend?” through the Finora skill and MCP tools.
-6. **2:20–2:30** — Close: one financial memory, useful everywhere.
+- password-protected statement PDFs;
+- more robust OCR review for low-quality scans;
+- user-defined merchant and category rules that persist across imports;
+- bank/email ingestion with explicit, narrow permissions;
+- shared household ledgers and role-based access;
+- mobile receipt capture and offline review;
+- rate limiting and a token-management screen before broad public release;
+- additional export destinations beyond Google Sheets.
 
-## OpenAI Build Week
+## Contributing
 
-Codex accelerated the complete product loop: product framing against the judging rubric, UI implementation, API schema design, MCP tool ergonomics, the reusable skill, and verification. Gemini 2.5 Flash provides multimodal statement understanding; Groq GPT-OSS 20B provides a fast text fallback; Codex, MCP, and the Finora skill make the financial memory agent-accessible.
+Issues and focused pull requests are welcome. Please keep financial data out of fixtures and logs, preserve the no-credential CSV path, and run the following before opening a PR:
 
-License: MIT (add your chosen copyright holder before publishing).
+```bash
+npm test
+npm run lint
+```
+
+## License
+
+A license file will be added before public distribution. Until then, the repository is available for hackathon judging and review; no additional rights are granted.
