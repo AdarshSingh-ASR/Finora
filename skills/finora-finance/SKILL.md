@@ -31,17 +31,20 @@ Use the smallest matching backend action. Read [references/api.md](references/ap
 - Period comparison: `call compare_months current=YYYY-MM previous=YYYY-MM`.
 - Merchant/category/date search: `call search_transactions query=Amazon`.
 - User category correction: `call correct_category transactionId=... category=Travel`.
+- Add or remove confirmed rows: `call add_transaction @payload.json` or `call delete_transactions @payload.json`. Require confirmation before deletion.
 - Budget changes: put the payload in a temporary JSON file and run `call set_budgets @payload.json`.
+- Remove one budget with `call remove_budget category=Shopping`.
 - Recurring charges: `call detect_subscriptions`.
 - Possible duplicates: `call find_duplicates`.
 - Unusual activity: `call detect_anomalies`.
 - Budgets or health score: `call budget_status` or `call financial_health_score`.
-- Google Sheets: `call sheet_status`, then `call sync_sheets`. If Google permission is required, present the returned `actionUrl` and retry after the user connects it.
+- Google Sheets: `call sheet_status`, then `call sync_sheets`. Use `call sheet_inspect` to verify tabs, chart counts, and sample rows. Read [references/api.md](references/api.md) before tab/range edits. If Google permission is required, present the returned `actionUrl` and retry after the user connects it.
 - Weekly/monthly email: `call report_settings '{"enabled":true,"frequency":"weekly","timezone":"Asia/Kolkata"}'`. This is a write and requires confirmation.
+- Rich monthly review: `call monthly_report period=YYYY-MM`. Reset email preferences with `call report_settings_clear` only when requested.
 
 ## Judgment and safety
 
-- Treat parsing, imports, ledger replacement, report changes, and Sheets sync as writes. Confirm before a destructive replacement, deletion, sharing, or scheduled email change. An explicit user request to do the action counts as confirmation.
+- Treat parsing, imports, ledger replacement, report changes, and Sheets sync as writes. Confirm before a destructive replacement, tab/range deletion, workbook deletion, sharing, or scheduled email change. An explicit user request to do the action counts as confirmation.
 - Include person-to-person transfers and investments by default. Label and subtotal them separately; exclude them only if the user explicitly asks.
 - Preserve uncertainty and confidence. Describe duplicates and anomalies as possible findings, not facts.
 - Keep answers concise and ledger-grounded. Use the backend's answer verbatim when it is already clear; otherwise summarize without changing numbers.

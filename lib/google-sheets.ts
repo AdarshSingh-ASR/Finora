@@ -75,10 +75,10 @@ function workbookValues(statement: StatementResult) {
   return { Transactions: transactions, "Monthly Summary": monthly, "Category Summary": categories, "Merchant Summary": merchants, Subscriptions: subscriptions, Insights: insights, Charts: [["Finora charts"], ["Charts refresh whenever you sync this workbook."]] };
 }
 
-type SheetMeta = { properties: { sheetId: number; title: string }; charts?: Array<{ chartId: number }> };
+type SheetMeta = { properties: { sheetId: number; title: string; gridProperties?: { rowCount?: number; columnCount?: number } }; charts?: Array<{ chartId: number }> };
 
 async function spreadsheetMetadata(accessToken: string, spreadsheetId: string) {
-  return googleRequest<{ properties?: { title?: string }; spreadsheetUrl?: string; sheets?: SheetMeta[] }>(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(spreadsheetId)}?includeGridData=false&fields=properties(title),spreadsheetUrl,sheets(properties(sheetId,title),charts(chartId))`);
+  return googleRequest<{ properties?: { title?: string }; spreadsheetUrl?: string; sheets?: SheetMeta[] }>(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(spreadsheetId)}?includeGridData=false&fields=properties(title),spreadsheetUrl,sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)),charts(chartId))`);
 }
 
 async function ensureSheets(accessToken: string, spreadsheetId: string) {
@@ -163,6 +163,30 @@ export async function getSheetConnection(userId: string) {
   return connection ? { ...connection, stale: Boolean(ledger && connection.lastSyncedAt < ledger.updatedAt) } : null;
 }
 
+export async function inspectSpreadsheet(userId: string) {
+  const connection = connectedWorkbook(await getSheetConnection(userId));
+  const accessToken = await googleToken(userId);
+  const metadata = await spreadsheetMetadata(accessToken, connection.spreadsheetId);
+  const ranges = ["'Transactions'!A1:I5", "'Monthly Summary'!A1:F5", "'Category Summary'!A1:C8", "'Merchant Summary'!A1:C8", "'Subscriptions'!A1:F8", "'Insights'!A1:A5", "'Charts'!A1:B3"];
+  const params = new URLSearchParams();
+  for (const range of ranges) params.append("ranges", range);
+  params.set("majorDimension", "ROWS");
+  params.set("valueRenderOption", "FORMATTED_VALUE");
+  const values = await googleRequest<{ valueRanges?: Array<{ range?: string; values?: unknown[][] }> }>(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(connection.spreadsheetId)}/values:batchGet?${params}`);
+  return {
+    spreadsheetId: connection.spreadsheetId,
+    spreadsheetUrl: metadata.spreadsheetUrl || connection.spreadsheetUrl,
+    name: metadata.properties?.title || connection.name,
+    sheets: (metadata.sheets || []).map((sheet) => ({
+      title: sheet.properties.title,
+      rowCount: sheet.properties.gridProperties?.rowCount || 0,
+      columnCount: sheet.properties.gridProperties?.columnCount || 0,
+      chartCount: sheet.charts?.length || 0,
+    })),
+    samples: (values.valueRanges || []).map((range) => ({ range: range.range, values: range.values || [] })),
+  };
+}
+
 export async function listSpreadsheets(userId: string, search = "") {
   const accessToken = await googleToken(userId);
   const safeSearch = search.trim().slice(0, 80).replaceAll("'", "\\'");
@@ -229,13 +253,26 @@ export async function moveSpreadsheet(userId: string, folderId: string) {
   return saveConnection(userId, { spreadsheetId: connection.spreadsheetId, spreadsheetUrl: connection.spreadsheetUrl, name: connection.name, folderId });
 }
 
-export async function shareSpreadsheet(userId: string, email: string) {
+export async function shareSpreadsheet(userId: string, email: string, sendNotificationEmail = true) {
   const connection = await getSheetConnection(userId);
   if (!connection) throw new GoogleWorkspaceError("Connect a spreadsheet first.", 404);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new GoogleWorkspaceError("Enter a valid email address.");
   const accessToken = await googleToken(userId);
-  const params = new URLSearchParams({ sendNotificationEmail: "true", fields: "id" });
+  const params = new URLSearchParams({ sendNotificationEmail: String(sendNotificationEmail), fields: "id" });
   await googleRequest(accessToken, `${DRIVE_API}/files/${encodeURIComponent(connection.spreadsheetId)}/permissions?${params}`, { method: "POST", body: JSON.stringify({ type: "user", role: "writer", emailAddress: email }) });
+  return connection;
+}
+
+export async function unshareSpreadsheet(userId: string, email: string) {
+  const connection = await getSheetConnection(userId);
+  if (!connection) throw new GoogleWorkspaceError("Connect a spreadsheet first.", 404);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new GoogleWorkspaceError("Enter a valid email address.");
+  const accessToken = await googleToken(userId);
+  const permissions = await googleRequest<{ permissions?: Array<{ id: string; emailAddress?: string; role?: string }> }>(accessToken, `${DRIVE_API}/files/${encodeURIComponent(connection.spreadsheetId)}/permissions?fields=permissions(id,emailAddress,role)`);
+  const permission = permissions.permissions?.find((item) => item.emailAddress?.toLowerCase() === email.toLowerCase());
+  if (!permission) throw new GoogleWorkspaceError("That email does not currently have direct access to this workbook.", 404);
+  if (permission.role === "owner") throw new GoogleWorkspaceError("The workbook owner cannot be removed.");
+  await googleRequest(accessToken, `${DRIVE_API}/files/${encodeURIComponent(connection.spreadsheetId)}/permissions/${encodeURIComponent(permission.id)}`, { method: "DELETE" });
   return connection;
 }
 
@@ -290,6 +327,21 @@ function parseRows(input: unknown) {
   return rows.map((row) => (row as unknown[]).map((cell) => typeof cell === "string" || typeof cell === "number" || typeof cell === "boolean" ? cell : String(cell ?? "")));
 }
 
+function cleanRange(value: unknown) {
+  const range = typeof value === "string" ? value.trim() : "";
+  if (!range || range.length > 120 || !/^[^!]{1,100}![A-Za-z]{1,3}\d*(?::[A-Za-z]{1,3}\d*)?$/.test(range.replaceAll("'", ""))) throw new GoogleWorkspaceError("Enter a range such as Transactions!A2:C20.");
+  return range;
+}
+
+export async function readSpreadsheetRange(userId: string, requestedRange: unknown) {
+  const connection = connectedWorkbook(await getSheetConnection(userId));
+  const accessToken = await googleToken(userId);
+  const range = cleanRange(requestedRange);
+  const params = new URLSearchParams({ majorDimension: "ROWS", valueRenderOption: "FORMATTED_VALUE" });
+  const result = await googleRequest<{ range?: string; values?: unknown[][] }>(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(connection.spreadsheetId)}/values/${encodeURIComponent(range)}?${params}`);
+  return { range: result.range || range, values: result.values || [] };
+}
+
 export async function appendSpreadsheetRows(userId: string, requestedTab: unknown, input: unknown) {
   const connection = connectedWorkbook(await getSheetConnection(userId));
   const accessToken = await googleToken(userId);
@@ -304,8 +356,7 @@ export async function appendSpreadsheetRows(userId: string, requestedTab: unknow
 export async function updateSpreadsheetRange(userId: string, requestedRange: unknown, input: unknown) {
   const connection = connectedWorkbook(await getSheetConnection(userId));
   const accessToken = await googleToken(userId);
-  const range = typeof requestedRange === "string" ? requestedRange.trim() : "";
-  if (!range || range.length > 120 || !/^[^!]{1,100}![A-Za-z]{1,3}\d*(?::[A-Za-z]{1,3}\d*)?$/.test(range.replaceAll("'", ""))) throw new GoogleWorkspaceError("Enter a range such as Transactions!A2:C20.");
+  const range = cleanRange(requestedRange);
   const rows = parseRows(input);
   const params = new URLSearchParams({ valueInputOption: "USER_ENTERED" });
   await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(connection.spreadsheetId)}/values/${encodeURIComponent(range)}?${params}`, { method: "PUT", body: JSON.stringify({ majorDimension: "ROWS", values: rows }) });
@@ -315,8 +366,7 @@ export async function updateSpreadsheetRange(userId: string, requestedRange: unk
 export async function clearSpreadsheetRange(userId: string, requestedRange: unknown) {
   const connection = connectedWorkbook(await getSheetConnection(userId));
   const accessToken = await googleToken(userId);
-  const range = typeof requestedRange === "string" ? requestedRange.trim() : "";
-  if (!range || range.length > 120 || !/^[^!]{1,100}![A-Za-z]{1,3}\d*(?::[A-Za-z]{1,3}\d*)?$/.test(range.replaceAll("'", ""))) throw new GoogleWorkspaceError("Enter a range such as Transactions!A2:C20.");
+  const range = cleanRange(requestedRange);
   await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(connection.spreadsheetId)}/values/${encodeURIComponent(range)}:clear`, { method: "POST", body: "{}" });
   return connection;
 }

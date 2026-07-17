@@ -8,8 +8,9 @@ import {
   findDuplicateTransactions, monthlySummaries, normalizeMerchant, summarize, weeklyReport,
 } from "../../../lib/finance";
 import {
-  connectSpreadsheet, copySpreadsheet, createSpreadsheet, disconnectSpreadsheet, getSheetConnection,
-  GoogleWorkspaceError, moveSpreadsheet, renameSpreadsheet, shareSpreadsheet, syncSpreadsheet,
+  addSpreadsheetTab, appendSpreadsheetRows, clearSpreadsheetRange, connectSpreadsheet, copySpreadsheet, createSpreadsheet,
+  deleteSpreadsheet, deleteSpreadsheetTab, disconnectSpreadsheet, getSheetConnection, GoogleWorkspaceError, inspectSpreadsheet,
+  moveSpreadsheet, readSpreadsheetRange, renameSpreadsheet, shareSpreadsheet, syncSpreadsheet, unshareSpreadsheet, updateSpreadsheetRange,
 } from "../../../lib/google-sheets";
 import { processStatementInput } from "../../../lib/statement-parser";
 import type { Budget, StatementResult } from "../../../lib/types";
@@ -17,10 +18,11 @@ import type { Budget, StatementResult } from "../../../lib/types";
 export const runtime = "edge";
 
 const capabilities = [
-  "skill_sync", "import_statement", "save_ledger", "list_transactions", "categorize_transactions", "normalize_merchants", "correct_category", "set_budgets", "summary", "monthly_summary",
+  "skill_sync", "import_statement", "save_ledger", "add_transaction", "delete_transactions", "list_transactions", "categorize_transactions", "normalize_merchants", "correct_category", "set_budgets", "remove_budget", "summary", "monthly_summary", "monthly_report",
   "spending_trends", "compare_months", "merchant_analysis", "search_transactions", "detect_subscriptions",
   "find_duplicates", "detect_anomalies", "budget_status", "financial_health_score", "weekly_report",
-  "answer_finance_question", "sheet_status", "sync_sheets", "sheet_connect", "sheet_rename", "sheet_copy", "sheet_move", "sheet_share", "sheet_disconnect", "report_settings",
+  "answer_finance_question", "sheet_status", "sheet_inspect", "sync_sheets", "sheet_connect", "sheet_rename", "sheet_copy", "sheet_move", "sheet_share", "sheet_unshare",
+  "sheet_add_tab", "sheet_delete_tab", "sheet_read_range", "sheet_append_rows", "sheet_update_range", "sheet_clear_range", "sheet_disconnect", "sheet_delete", "report_settings", "report_settings_clear",
 ];
 
 async function loadLedger(userId: string) {
@@ -86,7 +88,28 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
     if (action === "sheet_status") return Response.json({ connection: await getSheetConnection(identity.userId) });
+    if (action === "sheet_inspect") return Response.json({ workbook: await inspectSpreadsheet(identity.userId) });
     if (!statement) return Response.json({ error: "Import a statement before using this action.", code: "LEDGER_REQUIRED" }, { status: 409 });
+    if (action === "add_transaction") {
+      const category = String(body.category || "Miscellaneous");
+      const amount = Number(body.amount);
+      const merchant = String(body.merchant || "").trim();
+      const date = String(body.date || "").trim();
+      const type = body.type === "credit" || body.direction === "credit" ? "credit" : "debit";
+      if (!merchant || !date || !Number.isFinite(amount) || amount <= 0 || !categories.includes(category as never)) return Response.json({ error: "Provide a valid date, merchant, positive amount, direction, and category.", categories }, { status: 400 });
+      const transaction = { id: crypto.randomUUID(), date, merchant, description: String(body.description || merchant).trim(), amount, type, category: category as typeof transactions[number]["category"], confidence: 1, source: "Finora agent", explanation: "Added and confirmed through the Finora skill." };
+      await saveLedger(identity.userId, { ...statement, transactions: [...transactions, transaction] }, budgets);
+      return Response.json({ ok: true, transaction });
+    }
+    if (action === "delete_transactions") {
+      const ids = new Set(Array.isArray(body.transactionIds) ? body.transactionIds.slice(0, 500).map(String) : []);
+      if (!ids.size) return Response.json({ error: "transactionIds must contain at least one transaction ID." }, { status: 400 });
+      const updated = transactions.filter((item) => !ids.has(item.id));
+      const deleted = transactions.length - updated.length;
+      if (!deleted) return Response.json({ error: "No matching transactions were found." }, { status: 404 });
+      await saveLedger(identity.userId, { ...statement, transactions: updated }, budgets);
+      return Response.json({ ok: true, deleted, transactionCount: updated.length });
+    }
     if (action === "list_transactions" || action === "categorize_transactions") return Response.json({ transactions, count: transactions.length });
     if (action === "normalize_merchants") {
       const normalized = transactions.map((item) => ({ ...item, merchant: normalizeMerchant(item.merchant || item.description) }));
@@ -108,6 +131,13 @@ export async function POST(request: Request) {
       await saveLedger(identity.userId, statement, nextBudgets);
       return Response.json({ ok: true, budgets: nextBudgets });
     }
+    if (action === "remove_budget") {
+      const category = String(body.category || "");
+      const nextBudgets = budgets.filter((item) => item.category !== category);
+      if (nextBudgets.length === budgets.length) return Response.json({ error: "Budget not found." }, { status: 404 });
+      await saveLedger(identity.userId, statement, nextBudgets);
+      return Response.json({ ok: true, budgets: nextBudgets });
+    }
     if (action === "summary") return Response.json({ summary: summarize(transactions), transactionCount: transactions.length });
     if (action === "monthly_summary" || action === "spending_trends") return Response.json({ months: monthlySummaries(transactions) });
     if (action === "compare_months") return Response.json(compareMonths(transactions, typeof body.current === "string" ? body.current : undefined, typeof body.previous === "string" ? body.previous : undefined));
@@ -117,6 +147,11 @@ export async function POST(request: Request) {
     if (action === "budget_status") return Response.json({ budgets: budgetStatus(transactions, budgets, typeof body.period === "string" ? body.period : undefined) });
     if (action === "financial_health_score") return Response.json(financialHealthScore(transactions, budgets));
     if (action === "weekly_report") return Response.json(weeklyReport(transactions));
+    if (action === "monthly_report") {
+      const months = monthlySummaries(transactions);
+      const period = typeof body.period === "string" ? body.period : months.at(-1)?.period || "";
+      return Response.json({ period, summary: months.find((item) => item.period === period) || null, comparison: compareMonths(transactions, period), subscriptions: detectSubscriptions(transactions), anomalies: detectAnomalies(transactions), health: financialHealthScore(transactions, budgets) });
+    }
     if (action === "merchant_analysis" || action === "search_transactions") {
       const query = String(body.query || body.merchant || "").trim().toLowerCase();
       const filtered = transactions.filter((item) => !query || `${item.merchant} ${item.description} ${item.category} ${item.date}`.toLowerCase().includes(query));
@@ -134,8 +169,16 @@ export async function POST(request: Request) {
     if (action === "sheet_rename") return Response.json({ connection: await renameSpreadsheet(identity.userId, body.name) });
     if (action === "sheet_copy") return Response.json({ connection: await copySpreadsheet(identity.userId, body.name) });
     if (action === "sheet_move") return Response.json({ connection: await moveSpreadsheet(identity.userId, String(body.folderId || "")) });
-    if (action === "sheet_share") return Response.json({ connection: await shareSpreadsheet(identity.userId, String(body.email || "")) });
+    if (action === "sheet_share") return Response.json({ connection: await shareSpreadsheet(identity.userId, String(body.email || ""), body.notify !== false) });
+    if (action === "sheet_unshare") return Response.json({ connection: await unshareSpreadsheet(identity.userId, String(body.email || "")) });
+    if (action === "sheet_add_tab") return Response.json({ connection: await addSpreadsheetTab(identity.userId, body.name) });
+    if (action === "sheet_delete_tab") return Response.json({ connection: await deleteSpreadsheetTab(identity.userId, body.name) });
+    if (action === "sheet_read_range") return Response.json({ data: await readSpreadsheetRange(identity.userId, body.range) });
+    if (action === "sheet_append_rows") return Response.json({ connection: await appendSpreadsheetRows(identity.userId, body.tab, body.values) });
+    if (action === "sheet_update_range") return Response.json({ connection: await updateSpreadsheetRange(identity.userId, body.range, body.values) });
+    if (action === "sheet_clear_range") return Response.json({ connection: await clearSpreadsheetRange(identity.userId, body.range) });
     if (action === "sheet_disconnect") { await disconnectSpreadsheet(identity.userId); return Response.json({ ok: true }); }
+    if (action === "sheet_delete") { await deleteSpreadsheet(identity.userId); return Response.json({ ok: true }); }
     if (action === "report_settings") {
       const enabled = body.enabled === true;
       const frequency = body.frequency === "monthly" ? "monthly" : "weekly";
@@ -153,6 +196,7 @@ export async function POST(request: Request) {
         .onConflictDoUpdate({ target: reportPreference.userId, set: { weeklyEmailEnabled: enabled, frequency, timezone, updatedAt: now } });
       return Response.json({ ok: true, enabled, frequency, timezone, note: enabled ? "Google Gmail permission must already be connected in Finora." : undefined });
     }
+    if (action === "report_settings_clear") { await getDb().delete(reportPreference).where(eq(reportPreference.userId, identity.userId)); return Response.json({ ok: true }); }
     return Response.json({ error: "Unknown action.", capabilities }, { status: 400 });
   } catch (error) { return sheetFailure(error, request); }
 }
