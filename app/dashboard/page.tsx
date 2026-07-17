@@ -14,10 +14,10 @@ import {
   Files, Folder, Pencil, RefreshCw, Share2, Unlink,
   Paperclip, Play, FileCheck2,
 } from "lucide-react";
-import { budgetStatus, categories, compareMonths, detectAnomalies, detectSubscriptions, financialHealthScore, findDuplicateTransactions, inPeriod, latestPeriod, money, summarize, weeklyReport } from "../../lib/finance";
-import { analystMarkdown, buildAnalystResponse, chartColors, sanitizeAnalystResponse, type AnalystChart, type AnalystResponse } from "../../lib/analyst";
+import { budgetStatus, buildFinancialTimeline, categories, compareMonths, detectAnomalies, detectSubscriptions, financialHealthScore, findDuplicateTransactions, inPeriod, latestPeriod, money, summarize, weeklyReport } from "../../lib/finance";
+import { analystHtml, analystMarkdown, buildAnalystResponse, chartColors, sanitizeAnalystResponse, type AnalystChart, type AnalystResponse } from "../../lib/analyst";
 import { categoryColors } from "../../lib/category-colors";
-import type { Budget, Category, StatementResult, Transaction } from "../../lib/types";
+import type { Budget, Category, FinancialTimelineEvent, StatementResult, Transaction } from "../../lib/types";
 import { authClient, signIn, signOut, useSession } from "../../lib/auth-client";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -113,6 +113,16 @@ function AnalystChartView({ chart }: { chart: AnalystChart }) {
   </section>;
 }
 
+function FinancialTimeline({ events, compact = false }: { events: FinancialTimelineEvent[]; compact?: boolean }) {
+  if (!events.length) return <section className="financial-timeline empty"><header><small>FINANCIAL TIMELINE</small><h4>No material changes yet</h4></header><p>Import more than one month to reveal meaningful shifts.</p></section>;
+  return <section className={`financial-timeline ${compact ? "compact" : ""}`} aria-label="Financial timeline">
+    <header><small>FINANCIAL TIMELINE</small><h4>Your money story, month by month</h4><p>Only material, evidence-linked changes are shown.</p></header>
+    <div>{events.map((event, index) => <article className={event.significance} key={event.id} style={{ "--timeline-delay": `${index * 45}ms` } as React.CSSProperties}>
+      <span><i/>{event.period}</span><div><strong>{event.title}</strong><p>{event.detail}</p>{event.changePercent != null && <small>{Math.abs(event.changePercent).toFixed(0)}% change</small>}</div>
+    </article>)}</div>
+  </section>;
+}
+
 function AnalystReport({ analysis, onAsk }: { analysis: AnalystResponse; onAsk: (prompt?: string) => void }) {
   return <section className={`finora-analyst-report ${analysis.kind}`} aria-label={`${analysis.title} analytical report`}>
     <header className="analyst-report-head"><div><small><Activity size={12}/>FINORA ANALYST BRIEF</small><h3>{analysis.title}</h3><p>{analysis.scope}</p></div><span>{analysis.kind === "report" ? "REPORT" : "LIVE ANALYSIS"}</span></header>
@@ -122,8 +132,22 @@ function AnalystReport({ analysis, onAsk }: { analysis: AnalystResponse; onAsk: 
       {analysis.table && <section className="analyst-table-wrap"><header><small>SUPPORTING DETAIL</small><h4>{analysis.table.title}</h4></header><div><table><thead><tr>{analysis.table.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{analysis.table.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>)}</tr>)}</tbody></table></div></section>}
     </div>}
     {analysis.insights.length > 0 && <section className="analyst-insights"><header><Sparkles size={14}/><span>What Finora noticed</span></header><div>{analysis.insights.map((insight, index) => <article className={insight.tone} key={`${insight.title}-${index}`}><i/><span><strong>{insight.title}</strong><p>{insight.detail}</p></span></article>)}</div></section>}
+    {analysis.forecast && <section className="analyst-forecast"><div><small>MONTH-END ESTIMATE · {analysis.forecast.confidence.toUpperCase()} CONFIDENCE</small><strong>{money(analysis.forecast.projectedConsumption)}</strong><p>Projected consumption by month end</p></div><span><small>Actual so far</small><b>{money(analysis.forecast.actualConsumption)}</b><small>Projected cash flow</small><b>{money(analysis.forecast.projectedNetCashFlow)}</b></span></section>}
+    {analysis.timeline?.length ? <FinancialTimeline events={analysis.timeline} compact/> : null}
     {analysis.followUps.length > 0 && <div className="analyst-followups"><small>EXPLORE THIS FURTHER</small><div>{analysis.followUps.map((prompt) => <button key={prompt} onClick={() => onAsk(prompt)}>{prompt}<ArrowUpRight size={13}/></button>)}</div></div>}
   </section>;
+}
+
+function hasRichAnalystModules(analysis: AnalystResponse) {
+  return Boolean(
+    analysis.metrics.length
+    || analysis.chart
+    || analysis.table
+    || analysis.insights.length
+    || analysis.forecast
+    || analysis.timeline?.length
+    || analysis.followUps.length
+  );
 }
 
 function WorkspaceSkeleton() {
@@ -149,6 +173,22 @@ const financePrompts = [
   "Show my recurring subscriptions",
   "Compare this month with the previous month",
 ];
+
+function transactionEvidenceKey(transaction: Transaction) {
+  return `${transaction.date}|${transaction.type}|${transaction.amount.toFixed(2)}|${transaction.merchant.trim().toLowerCase()}|${transaction.description.trim().toLowerCase()}`;
+}
+
+function mergeImportedTransactions(saved: Transaction[], imported: Transaction[]) {
+  const ids = new Set(saved.map((transaction) => transaction.id));
+  const evidence = new Set(saved.map(transactionEvidenceKey));
+  const merged = [...saved];
+  for (const transaction of imported) {
+    const key = transactionEvidenceKey(transaction);
+    if (ids.has(transaction.id) || evidence.has(key)) continue;
+    merged.push(transaction); ids.add(transaction.id); evidence.add(key);
+  }
+  return merged.sort((a, b) => b.date.localeCompare(a.date));
+}
 
 function ChatWorkspace({ messages, question, asking, transactionCount, attachments, contextAttachments, attachmentBusy, runningActionId, onQuestion, onAsk, onAttach, onRemoveAttachment, onRunAction, endRef }: {
   messages: ChatMessage[];
@@ -193,7 +233,7 @@ function ChatWorkspace({ messages, question, asking, transactionCount, attachmen
             <div className="finora-chat-avatar">{message.role === "assistant" ? <Mark/> : <UserRound size={16}/>}</div>
             <div>
               <span>{message.role === "assistant" ? "Finora" : "You"}</span>
-              {message.role === "assistant" ? <><div className="finora-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>{message.analysis && <AnalystReport analysis={message.analysis} onAsk={onAsk}/>}</> : <>{message.attachments?.length ? <div className="finora-message-files">{message.attachments.map((file) => <span key={file.id}><FileCheck2 size={13}/><b>{file.name}</b><small>{file.transactionCount} found</small></span>)}</div> : null}<p>{message.content}</p></>}
+              {message.role === "assistant" ? <><div className="finora-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>{message.analysis && hasRichAnalystModules(message.analysis) && <AnalystReport analysis={message.analysis} onAsk={onAsk}/>}</> : <>{message.attachments?.length ? <div className="finora-message-files">{message.attachments.map((file) => <span key={file.id}><FileCheck2 size={13}/><b>{file.name}</b><small>{file.transactionCount} found</small></span>)}</div> : null}<p>{message.content}</p></>}
               {message.role === "assistant" && message.actions?.length ? <section className="finora-agent-actions" aria-label="Finora actions">
                 <header><span><Zap size={13}/>READY TO DO</span><small>Nothing runs until you approve it.</small></header>
                 <div>{message.actions.map((action) => <article className={action.status} key={action.id}>
@@ -229,8 +269,9 @@ function ChatWorkspace({ messages, question, asking, transactionCount, attachmen
   </section>;
 }
 
-function ReportsPage({ frequency, enabled, timezone, period, outflow, consumption, transfers, topCategory, topMerchant, largest, healthScore, healthLabel, suggestion, onFrequency, onTimezone, onEnable, onDisable }: {
+function ReportsPage({ frequency, enabled, timezone, period, outflow, consumption, transfers, topCategory, topMerchant, largest, healthScore, healthLabel, suggestion, timeline, onFrequency, onTimezone, onEnable, onDisable }: {
   frequency: "weekly" | "monthly"; enabled: boolean; timezone: string; period: string; outflow: number; consumption: number; transfers: number; topCategory: string; topMerchant: string; largest: string; healthScore: number; healthLabel: string; suggestion: string;
+  timeline: FinancialTimelineEvent[];
   onFrequency: (frequency: "weekly" | "monthly") => void; onTimezone: (timezone: string) => void; onEnable: () => void; onDisable: () => void;
 }) {
   return <section className="view-page reports-page">
@@ -253,6 +294,7 @@ function ReportsPage({ frequency, enabled, timezone, period, outflow, consumptio
         <small><ShieldCheck size={12}/>Finora can send this report but cannot read your inbox.</small>
       </aside>
     </div>
+    <FinancialTimeline events={timeline}/>
   </section>;
 }
 
@@ -390,6 +432,7 @@ export default function Home() {
   const anomalies = useMemo(() => detectAnomalies(statement.transactions), [statement]);
   const budgetStatuses = useMemo(() => budgetStatus(statement.transactions, budgets, activePeriod), [statement, budgets, activePeriod]);
   const health = useMemo(() => financialHealthScore(statement.transactions, budgets), [statement, budgets]);
+  const financialTimeline = useMemo(() => buildFinancialTimeline(statement.transactions, budgets, 6), [statement, budgets]);
   const week = useMemo(() => weeklyReport(statement.transactions), [statement]);
   const weeklyReportDebits = useMemo(() => statement.transactions.filter((transaction) => transaction.type === "debit" && transaction.date.slice(0, 10) >= week.start && transaction.date.slice(0, 10) <= week.end), [statement, week.start, week.end]);
   const weeklyReportOutflow = useMemo(() => weeklyReportDebits.reduce((total, transaction) => total + transaction.amount, 0), [weeklyReportDebits]);
@@ -530,13 +573,13 @@ export default function Home() {
   }
 
   async function clearLedger() {
-    if (!window.confirm("Remove every imported transaction and budget from your Finora account? This cannot be undone.")) return;
+    if (!window.confirm(`Permanently clear all ${statement.transactions.length} saved transactions and every budget from your Finora account? This cannot be undone.`)) return;
     try {
       const response = await fetch("/api/account", { method: "DELETE" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not clear your ledger.");
       setStatement(emptyStatement); setBudgets([]); setSynced(false); setAccountOpen(false); setView("overview");
-      notify("Your imported ledger and budgets were removed.");
+      notify("All saved transactions and budgets were permanently cleared.");
     } catch (error) { notify(error instanceof Error ? error.message : "Could not clear your ledger.", "bad"); }
   }
 
@@ -651,12 +694,21 @@ export default function Home() {
       });
       const result = await response.json();
       if (!response.ok || result.error) throw new Error(result.error || "Statement analysis failed.");
-      const nextStatement = append ? { ...statement, transactions: [...result.transactions, ...statement.transactions], insights: [`Added ${result.transactions.length} receipt transaction${result.transactions.length === 1 ? "" : "s"}.`, ...statement.insights.slice(0, 2)] } : result;
+      const shouldAppend = append || statement.transactions.length > 0;
+      const mergedTransactions = shouldAppend ? mergeImportedTransactions(statement.transactions, result.transactions) : result.transactions;
+      const addedCount = mergedTransactions.length - (shouldAppend ? statement.transactions.length : 0);
+      const nextStatement = shouldAppend ? {
+        ...statement,
+        bankName: statement.bankName === result.bankName ? statement.bankName : "Multiple accounts",
+        period: "Combined ledger",
+        transactions: mergedTransactions,
+        insights: [`Added ${addedCount} new transaction${addedCount === 1 ? "" : "s"} from ${file.name}; existing matches were kept once.`, ...result.insights.slice(0, 2)],
+      } : result;
       await persistLedger(nextStatement, budgets);
       setStatement(nextStatement);
       setSynced(false);
       setView("overview");
-      notify(`${result.transactions.length} real transaction${result.transactions.length === 1 ? "" : "s"} imported and categorized.`);
+      notify(`${addedCount} new transaction${addedCount === 1 ? "" : "s"} imported and categorized${addedCount < result.transactions.length ? `; ${result.transactions.length - addedCount} existing match${result.transactions.length - addedCount === 1 ? " was" : "es were"} skipped` : ""}.`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "We couldn't read that statement.", "bad");
     } finally { setUploading(false); }
@@ -669,7 +721,7 @@ export default function Home() {
     setSynced(false);
   }
 
-  async function exportData(format: "csv" | "json" | "xlsx" | "markdown", sourceStatement = statement) {
+  async function exportData(format: "csv" | "json" | "xlsx" | "markdown" | "html", sourceStatement = statement) {
     const header = ["Date", "Merchant", "Description", "Type", "Amount", "Category", "Confidence"];
     const sourcePeriod = latestPeriod(sourceStatement.transactions);
     const sourceSummary = summarize(inPeriod(sourceStatement.transactions, sourcePeriod));
@@ -686,9 +738,10 @@ export default function Home() {
       XLSX.writeFile(book, "finora-report.xlsx"); notify("Excel workbook exported."); return;
     }
     const content = format === "json" ? JSON.stringify({ statement: sourceStatement, summary: sourceSummary, subscriptions: sourceSubscriptions, anomalies: sourceAnomalies, budgets: sourceBudgetStatuses, health: sourceHealth }, null, 2)
+      : format === "html" ? analystHtml(buildAnalystResponse("Generate a comprehensive financial report", sourceStatement.transactions, budgets))
       : format === "markdown" ? `# Finora money report\n\n**Period:** ${sourcePeriod}\n\n- Income: ${money(sourceSummary.income)}\n- Spent: ${money(sourceSummary.spend)}\n- Saved: ${money(sourceSummary.saved)}\n- Health score: ${sourceHealth.score}/100\n\n## Categories\n${sourceCategories.map(([category, amount]) => `- ${category}: ${money(amount)}`).join("\n")}\n\n## Subscriptions\n${sourceSubscriptions.map((item) => `- ${item.merchant}: ${money(item.monthlyCost)}/month`).join("\n") || "None detected"}`
       : [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
-    const mime = format === "json" ? "application/json" : format === "markdown" ? "text/markdown" : "text/csv";
+    const mime = format === "json" ? "application/json" : format === "markdown" ? "text/markdown" : format === "html" ? "text/html" : "text/csv";
     const url = URL.createObjectURL(new Blob([content], { type: mime })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `finora-report.${format === "markdown" ? "md" : format}`; anchor.click(); URL.revokeObjectURL(url); notify(`${format.toUpperCase()} report exported.`);
   }
 
@@ -934,7 +987,7 @@ export default function Home() {
         const nextBudgets = budgets.filter((budget) => budget.category !== action.payload.category);
         await persistLedger(statement, nextBudgets); setBudgets(nextBudgets); result = `${action.payload.category} budget removed.`;
       } else if (action.type === "export_report") {
-        const format = ["csv", "xlsx", "json", "markdown"].includes(action.payload.name.toLowerCase()) ? action.payload.name.toLowerCase() as "csv" | "xlsx" | "json" | "markdown" : "xlsx";
+        const format = ["csv", "xlsx", "json", "markdown", "html"].includes(action.payload.name.toLowerCase()) ? action.payload.name.toLowerCase() as "csv" | "xlsx" | "json" | "markdown" | "html" : "xlsx";
         await exportData(format, scopedStatement || statement); result = `${format === "xlsx" ? "Excel" : format.toUpperCase()} export downloaded.`;
       } else if (action.type === "open_reports") {
         setView("reports"); result = "AI Reports opened.";
@@ -1119,12 +1172,12 @@ export default function Home() {
         </div>)}
 
         {view === "transactions" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <section className="view-page">
-          <div className="view-heading"><div><p className="eyebrow">YOUR CLEAN LEDGER</p><h1>Transactions</h1><p>{statement.transactions.length} payments from {statement.bankName}. Click any category to correct it.</p></div><div className="view-actions"><details className="export-menu"><summary>Export <ChevronDown size={15}/></summary><div><button onClick={(event) => { void exportData("csv"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>CSV <small>Comma-separated</small></button><button onClick={(event) => { void exportData("xlsx"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Excel <small>Workbook</small></button><button onClick={(event) => { void exportData("json"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>JSON <small>Structured data</small></button><button onClick={(event) => { void exportData("markdown"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Markdown <small>Readable report</small></button></div></details><button className="secondary-button" onClick={() => receiptRef.current?.click()}><Camera size={16}/>Scan receipt</button><button className="primary-button" onClick={() => fileRef.current?.click()}><UploadCloud size={16}/>Import statement</button></div></div>
+          <div className="view-heading"><div><p className="eyebrow">YOUR CLEAN LEDGER</p><h1>Transactions</h1><p>{statement.transactions.length} payments from {statement.bankName}. Click any category to correct it.</p></div><div className="view-actions"><details className="export-menu"><summary>Export <ChevronDown size={15}/></summary><div><button onClick={(event) => { void exportData("csv"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>CSV <small>Comma-separated</small></button><button onClick={(event) => { void exportData("xlsx"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Excel <small>Workbook</small></button><button onClick={(event) => { void exportData("json"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>JSON <small>Structured data</small></button><button onClick={(event) => { void exportData("markdown"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Markdown <small>Readable report</small></button><button onClick={(event) => { void exportData("html"); event.currentTarget.closest("details")?.removeAttribute("open"); }}>HTML <small>Analyst brief</small></button></div></details><button className="danger-button" onClick={clearLedger}><Trash2 size={16}/>Clear all transactions</button><button className="secondary-button" onClick={() => receiptRef.current?.click()}><Camera size={16}/>Scan receipt</button><button className="primary-button" onClick={() => fileRef.current?.click()}><UploadCloud size={16}/>Import statement</button></div></div>
           <div className="filter-bar"><label><Search size={17}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search merchant, narration, category…"/></label><span>{visibleTransactions.length} result{visibleTransactions.length === 1 ? "" : "s"}</span></div>
           <div className="panel ledger-panel"><div className="transaction-table"><div className="transaction-head"><span>Merchant</span><span>Date</span><span>Category</span><span>Confidence</span><span>Amount</span></div>{visibleTransactions.map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} onCategory={(category) => updateCategory(transaction.id, category)} />)}</div></div>
         </section>)}
 
-        {view === "reports" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ReportsPage frequency={reportFrequency} enabled={weeklyEmailEnabled} timezone={reportTimezone} period={reportFrequency === "weekly" ? `${week.start} — ${week.end}` : activePeriod} outflow={reportFrequency === "weekly" ? weeklyReportOutflow : reportOutflow} consumption={reportFrequency === "weekly" ? weeklyReportOutflow - weeklyReportTransfers : summary.spend} transfers={reportFrequency === "weekly" ? weeklyReportTransfers : summary.transfers} topCategory={(reportFrequency === "weekly" ? weeklyTopCategory : reportTopCategory)?.[0] || "None"} topMerchant={(reportFrequency === "weekly" ? weeklyTopMerchant : reportTopMerchant)?.[0] || "None"} largest={reportFrequency === "weekly" ? (weeklyLargest ? `${weeklyLargest.merchant} · ${money(weeklyLargest.amount)}` : "None") : (reportLargest ? `${reportLargest.merchant} · ${money(reportLargest.amount)}` : "None")} healthScore={health.score} healthLabel={health.label} suggestion={reportFrequency === "weekly" ? week.suggestion : (statement.insights[0] || "Keep importing transactions to receive a useful monthly suggestion.")} onFrequency={(frequency) => void chooseReportFrequency(frequency)} onTimezone={(timezone) => { setReportTimezone(timezone); if (weeklyEmailEnabled) void savePreferences(true, timezone, reportFrequency); }} onEnable={() => void enableReport()} onDisable={() => void disableReport()}/>) }
+        {view === "reports" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ReportsPage frequency={reportFrequency} enabled={weeklyEmailEnabled} timezone={reportTimezone} period={reportFrequency === "weekly" ? `${week.start} — ${week.end}` : activePeriod} outflow={reportFrequency === "weekly" ? weeklyReportOutflow : reportOutflow} consumption={reportFrequency === "weekly" ? weeklyReportOutflow - weeklyReportTransfers : summary.spend} transfers={reportFrequency === "weekly" ? weeklyReportTransfers : summary.transfers} topCategory={(reportFrequency === "weekly" ? weeklyTopCategory : reportTopCategory)?.[0] || "None"} topMerchant={(reportFrequency === "weekly" ? weeklyTopMerchant : reportTopMerchant)?.[0] || "None"} largest={reportFrequency === "weekly" ? (weeklyLargest ? `${weeklyLargest.merchant} · ${money(weeklyLargest.amount)}` : "None") : (reportLargest ? `${reportLargest.merchant} · ${money(reportLargest.amount)}` : "None")} healthScore={health.score} healthLabel={health.label} suggestion={reportFrequency === "weekly" ? week.suggestion : (statement.insights[0] || "Keep importing transactions to receive a useful monthly suggestion.")} timeline={financialTimeline} onFrequency={(frequency) => void chooseReportFrequency(frequency)} onTimezone={(timezone) => { setReportTimezone(timezone); if (weeklyEmailEnabled) void savePreferences(true, timezone, reportFrequency); }} onEnable={() => void enableReport()} onDisable={() => void disableReport()}/>) }
 
         {view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ChatWorkspace messages={chatMessages} question={question} asking={asking} transactionCount={statement.transactions.length} attachments={chatAttachments} contextAttachments={chatContextAttachments} attachmentBusy={attachmentBusy} runningActionId={runningActionId} onQuestion={setQuestion} onAsk={askAgent} onAttach={(files) => void handleChatFiles(files)} onRemoveAttachment={(id) => { chatAttachmentsRef.current = chatAttachmentsRef.current.filter((attachment) => attachment.id !== id); setChatAttachments(chatAttachmentsRef.current); }} onRunAction={(messageId, action) => void runAgentAction(messageId, action)} endRef={chatEndRef}/>)}
 
@@ -1150,7 +1203,7 @@ export default function Home() {
         <label>Report timezone<select value={reportTimezone} onChange={(event) => { setReportTimezone(event.target.value); if (weeklyEmailEnabled) void savePreferences(true, event.target.value, reportFrequency); }}><option value="Asia/Kolkata">India · Asia/Kolkata</option><option value="America/New_York">US · New York</option><option value="America/Los_Angeles">US · Los Angeles</option><option value="Europe/London">UK · London</option><option value="Asia/Singapore">Singapore</option></select></label>
         {weeklyEmailEnabled ? <button className="modal-action report-off" onClick={disableReport}><Mail size={16}/>Turn off AI report email</button> : <button className="modal-action" onClick={() => void enableReport()}><Mail size={16}/>Allow Gmail & enable report</button>}
         <small className="privacy-note"><ShieldCheck size={12}/>Finora can send this report, but cannot read your inbox.</small>
-        {hasData && <button className="clear-data-link" onClick={clearLedger}><Trash2 size={14}/>Clear imported data</button>}
+        {hasData && <button className="clear-data-link" onClick={clearLedger}><Trash2 size={14}/>Clear all transactions</button>}
         <button className="sign-out-link" onClick={handleSignOut}><LogOut size={15}/>Sign out</button>
         {accountLoading && <div className="account-loading"><LoaderCircle className="spin" size={18}/></div>}
       </div></div>}

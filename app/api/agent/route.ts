@@ -4,8 +4,10 @@ import { getDb } from "../../../db";
 import { account, reportPreference, userLedger } from "../../../db/schema";
 import { agentIdentity } from "../../../lib/agent-auth";
 import {
+  analyzeFinances, buildFinanceGraph, buildFinancialTimeline, explainBudgetExceeded, explainSpendingChange,
   budgetStatus, categories, compareMonths, detectAnomalies, detectSubscriptions, financialHealthScore,
-  findDuplicateTransactions, monthlySummaries, normalizeMerchant, summarize, weeklyReport,
+  financialHealthReport, findCostCutting, findDuplicateTransactions, findSavingsOpportunities,
+  monthlySummaries, money, normalizeMerchant, predictMonthEndSpending, suggestBudgets, summarize, weeklyReport,
 } from "../../../lib/finance";
 import {
   addSpreadsheetTab, appendSpreadsheetRows, clearSpreadsheetRange, connectSpreadsheet, copySpreadsheet, createSpreadsheet,
@@ -18,6 +20,8 @@ import type { Budget, StatementResult } from "../../../lib/types";
 export const runtime = "edge";
 
 const capabilities = [
+  "sync_statement", "analyze_finances", "generate_dashboard", "find_savings", "financial_health_report",
+  "explain_spending_change", "why_is_budget_exceeded", "suggest_budget", "find_cost_cutting", "predict_month_end_spending", "financial_timeline", "finance_graph",
   "skill_sync", "import_statement", "save_ledger", "add_transaction", "delete_transactions", "list_transactions", "categorize_transactions", "normalize_merchants", "correct_category", "set_budgets", "remove_budget", "summary", "monthly_summary", "monthly_report",
   "spending_trends", "compare_months", "merchant_analysis", "search_transactions", "detect_subscriptions",
   "find_duplicates", "detect_anomalies", "budget_status", "financial_health_score", "weekly_report",
@@ -82,6 +86,20 @@ export async function POST(request: Request) {
       await saveLedger(identity.userId, saved, budgets);
       return Response.json({ imported: parsed.transactions.length, totalTransactions: saved.transactions.length, statement: saved });
     }
+    if (action === "sync_statement") {
+      const parsed = await processStatementInput({ filename: String(body.filename || "statement"), mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined, fileData: typeof body.fileData === "string" ? body.fileData : undefined, text: typeof body.text === "string" ? body.text : undefined });
+      const replace = body.replace === true;
+      const mergedTransactions = !replace && statement ? [...statement.transactions, ...parsed.transactions].filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id || (candidate.date === item.date && candidate.amount === item.amount && candidate.description === item.description)) === index) : parsed.transactions;
+      const saved = { ...parsed, transactions: mergedTransactions, provider: undefined, model: undefined } as StatementResult;
+      await saveLedger(identity.userId, saved, budgets);
+      const analysis = analyzeFinances(saved.transactions, budgets, typeof body.period === "string" ? body.period : undefined);
+      let sheet = null;
+      if (body.syncSheets === true) {
+        const connection = await getSheetConnection(identity.userId);
+        sheet = connection ? await syncSpreadsheet(identity.userId, saved) : await createSpreadsheet(identity.userId, body.name, saved);
+      }
+      return Response.json({ summary: `Imported ${parsed.transactions.length} transactions and analyzed ${analysis.period || "the ledger"}${sheet ? "; Google Sheets is updated" : ""}.`, imported: parsed.transactions.length, totalTransactions: saved.transactions.length, statement: saved, analysis, sheet });
+    }
     if (action === "save_ledger") {
       if (!body.statement || typeof body.statement !== "object") return Response.json({ error: "statement is required." }, { status: 400 });
       await saveLedger(identity.userId, body.statement as StatementResult, Array.isArray(body.budgets) ? body.budgets as Budget[] : budgets);
@@ -139,6 +157,22 @@ export async function POST(request: Request) {
       return Response.json({ ok: true, budgets: nextBudgets });
     }
     if (action === "summary") return Response.json({ summary: summarize(transactions), transactionCount: transactions.length });
+    if (action === "analyze_finances") { const analysis = analyzeFinances(transactions, budgets, typeof body.period === "string" ? body.period : undefined); return Response.json({ summary: `${money(analysis.cashFlow.consumption)} consumption and ${money(analysis.cashFlow.netCashFlow)} net cash flow in ${analysis.period}.`, analysis }); }
+    if (action === "generate_dashboard") {
+      const analysis = analyzeFinances(transactions, budgets, typeof body.period === "string" ? body.period : undefined);
+      let connection = await getSheetConnection(identity.userId);
+      if (body.syncSheets === true) connection = connection ? await syncSpreadsheet(identity.userId) : await createSpreadsheet(identity.userId, body.name);
+      return Response.json({ summary: `Generated the ${analysis.period} financial dashboard${body.syncSheets === true ? " and synchronized Google Sheets" : ""}.`, dashboard: analysis, connection });
+    }
+    if (action === "find_savings") { const opportunities = findSavingsOpportunities(transactions, typeof body.period === "string" ? body.period : undefined); return Response.json({ summary: opportunities.length ? `Found ${opportunities.length} evidence-backed savings opportunities.` : "No evidence-backed savings opportunities were found.", opportunities }); }
+    if (action === "financial_health_report") { const report = financialHealthReport(transactions, budgets, typeof body.period === "string" ? body.period : undefined); return Response.json({ summary: `Financial health is ${report.score}/100 (${report.label}) for ${report.period}.`, report }); }
+    if (action === "explain_spending_change") { const explanation = explainSpendingChange(transactions, typeof body.current === "string" ? body.current : undefined, typeof body.previous === "string" ? body.previous : undefined); return Response.json({ summary: explanation.consumptionChangePercent == null ? `No comparable consumption baseline exists for ${explanation.current}.` : `Consumption changed ${Math.abs(explanation.consumptionChangePercent).toFixed(0)}% ${explanation.consumptionChangePercent >= 0 ? "up" : "down"}.`, explanation }); }
+    if (action === "why_is_budget_exceeded") { const explanation = explainBudgetExceeded(transactions, budgets, typeof body.category === "string" ? body.category : undefined, typeof body.period === "string" ? body.period : undefined); return Response.json({ summary: `${explanation.exceeded.length} budget${explanation.exceeded.length === 1 ? " is" : "s are"} over the limit in ${explanation.period}.`, explanation }); }
+    if (action === "suggest_budget") { const suggestions = suggestBudgets(transactions, Number.isFinite(Number(body.bufferPercent)) ? Number(body.bufferPercent) : 10); return Response.json({ summary: `Built ${suggestions.length} category limit suggestions from trailing medians.`, suggestions }); }
+    if (action === "find_cost_cutting") { const result = findCostCutting(transactions, typeof body.period === "string" ? body.period : undefined); return Response.json({ summary: `${money(result.totalMonthlyPotential)} in potential monthly reductions is supported by ledger evidence.`, ...result }); }
+    if (action === "predict_month_end_spending") { const forecast = predictMonthEndSpending(transactions, typeof body.period === "string" ? body.period : undefined); return Response.json({ summary: `Projected month-end consumption is ${money(forecast.projectedConsumption)} with ${forecast.confidence} confidence.`, forecast }); }
+    if (action === "financial_timeline") { const timeline = buildFinancialTimeline(transactions, budgets, Number.isFinite(Number(body.months)) ? Number(body.months) : 6); return Response.json({ summary: `Built a financial timeline with ${timeline.length} material events.`, timeline }); }
+    if (action === "finance_graph") { const graph = buildFinanceGraph(transactions, budgets); return Response.json({ summary: `Derived ${graph.nodes.length} connected finance entities and ${graph.edges.length} evidence relationships.`, graph }); }
     if (action === "monthly_summary" || action === "spending_trends") return Response.json({ months: monthlySummaries(transactions) });
     if (action === "compare_months") return Response.json(compareMonths(transactions, typeof body.current === "string" ? body.current : undefined, typeof body.previous === "string" ? body.previous : undefined));
     if (action === "detect_subscriptions") return Response.json({ subscriptions: detectSubscriptions(transactions) });

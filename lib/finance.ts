@@ -1,5 +1,20 @@
 import type { Budget, Category, DuplicateMatch, SpendingAnomaly, StatementResult, Subscription, Transaction } from "./types";
 
+export {
+  analyzeFinances,
+  buildCashFlow,
+  buildFinanceGraph,
+  buildFinancialTimeline,
+  classifyTransaction,
+  explainBudgetExceeded,
+  explainSpendingChange,
+  financialHealthReport,
+  findCostCutting,
+  findSavingsOpportunities,
+  predictMonthEndSpending,
+  suggestBudgets,
+} from "./finance-intelligence.mjs";
+
 export const categories: Category[] = [
   "Food & Dining", "Housing", "Transport", "Shopping", "Bills & Utilities",
   "EMI", "Investment", "Health", "Entertainment", "Travel", "Salary",
@@ -42,11 +57,15 @@ export function inPeriod(transactions: Transaction[], period = latestPeriod(tran
 export function summarize(transactions: Transaction[]) {
   const income = transactions.filter((t) => t.type === "credit").reduce((a, t) => a + t.amount, 0);
   const spend = transactions.filter((t) => t.type === "debit" && !["Transfers", "Investment"].includes(t.category)).reduce((a, t) => a + t.amount, 0);
-  const transfers = transactions.filter((t) => t.type === "debit" && ["Transfers", "Investment"].includes(t.category)).reduce((a, t) => a + t.amount, 0);
+  const transfersOnly = transactions.filter((t) => t.type === "debit" && t.category === "Transfers").reduce((a, t) => a + t.amount, 0);
+  const investmentContributions = transactions.filter((t) => t.type === "debit" && t.category === "Investment").reduce((a, t) => a + t.amount, 0);
+  const transfers = transfersOnly + investmentContributions;
   const byCategory = transactions.filter((t) => t.type === "debit" && !["Transfers", "Investment"].includes(t.category)).reduce<Record<string, number>>((acc, t) => {
     acc[t.category] = (acc[t.category] || 0) + t.amount; return acc;
   }, {});
-  return { income, spend, transfers, saved: income - spend - transfers, savingsRate: income ? ((income - spend - transfers) / income) * 100 : 0, byCategory };
+  const totalOutflow = spend + transfers;
+  const netCashFlow = income - totalOutflow;
+  return { income, spend, consumption: spend, transfers, transfersOnly, investmentContributions, totalOutflow, saved: netCashFlow, netCashFlow, savingsRate: income ? ((income - spend) / income) * 100 : 0, cashRetentionRate: income ? (netCashFlow / income) * 100 : 0, byCategory };
 }
 
 export function monthlySummaries(transactions: Transaction[]) {

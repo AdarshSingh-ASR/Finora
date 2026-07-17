@@ -84,7 +84,7 @@ try {
     const extension = extname(filePath).toLowerCase();
     const mime = { ".pdf": "application/pdf", ".csv": "text/csv", ".txt": "text/plain", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xls": "application/vnd.ms-excel", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" }[extension] || "application/octet-stream";
     const textual = [".csv", ".txt"].includes(extension);
-    const payload = { action: "import_statement", filename: basename(filePath), mimeType: mime, replace: args.includes("--replace"), ...(textual ? { text: data.toString("utf8") } : { fileData: `data:${mime};base64,${data.toString("base64")}` }) };
+    const payload = { action: "sync_statement", filename: basename(filePath), mimeType: mime, replace: args.includes("--replace"), syncSheets: false, ...(textual ? { text: data.toString("utf8") } : { fileData: `data:${mime};base64,${data.toString("base64")}` }) };
     output(await authenticated(config, "/api/agent", { method: "POST", body: JSON.stringify(payload) }));
   } else if (command === "logout") {
     if (config.accessToken) await request("/api/agent-auth/token", config, { method: "DELETE" });

@@ -32,9 +32,9 @@ const capabilities = [
 ];
 
 const mcpTools = [
-  "parse_statement", "categorize_transactions", "monthly_summary",
-  "detect_subscriptions", "find_duplicates", "answer_finance_question",
-  "sync_to_sheet",
+  "sync_statement", "analyze_finances", "financial_timeline",
+  "find_savings", "explain_spending_change", "predict_month_end_spending",
+  "generate_dashboard",
 ];
 
 function FinoraMark() {
@@ -115,7 +115,7 @@ export default function LandingPage() {
         <div className="beige-mcp-copy">
           <p>04 · THE AGENT SURFACE</p>
           <h2>The MCP is not an add-on.<br/><em>It is the product.</em></h2>
-          <p>Focused tools let any compatible agent parse, review, analyze, question, and export your financial memory without forcing one monolithic workflow.</p>
+          <p>Finora is a financial intelligence layer for any compatible agent: analyze a ledger, explain change, find savings, forecast the month, and build a dashboard. Focused parsing and spreadsheet tools remain available when precision is useful.</p>
           <button onClick={downloadSkill}>Connect my money memory <ArrowRight size={16}/></button>
         </div>
         <div className="beige-mcp-console" aria-label="Finora MCP tools">
@@ -124,7 +124,7 @@ export default function LandingPage() {
           <div className="beige-tool-list">
             {mcpTools.map((tool, index) => <div key={tool}><span>{String(index + 1).padStart(2, "0")}</span><code>{tool}()</code><i>AVAILABLE</i></div>)}
           </div>
-          <footer><Sparkles size={15}/><span>The skill teaches the agent when to parse, review, ask, and sync.</span></footer>
+          <footer><Sparkles size={15}/><span>The skill chooses outcome tools first, then uses precise ledger or Sheet edits only when requested.</span></footer>
         </div>
       </section>
 

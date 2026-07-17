@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { analyzeFinances } from "../lib/finance-intelligence.mjs";
 
 test("MCP exposes composable finance tools and parses bank variants", async () => {
   const dataDir = await mkdtemp(path.join(tmpdir(), "finora-test-"));
@@ -14,13 +15,17 @@ test("MCP exposes composable finance tools and parses bank variants", async () =
   await client.connect(transport);
   try {
     const tools = (await client.listTools()).tools.map((tool) => tool.name);
-    for (const name of ["parse_statement", "categorize_transactions", "summarize_transactions", "detect_subscriptions", "find_duplicate_transactions", "detect_spending_anomalies", "budget_status", "financial_health_score", "sync_to_sheet"]) assert.ok(tools.includes(name), `missing ${name}`);
+    for (const name of ["sync_statement", "analyze_finances", "generate_dashboard", "find_savings", "financial_health_report", "explain_spending_change", "why_is_budget_exceeded", "suggest_budget", "find_cost_cutting", "predict_month_end_spending", "financial_timeline", "finance_graph", "parse_statement", "categorize_transactions", "summarize_transactions", "detect_subscriptions", "find_duplicate_transactions", "detect_spending_anomalies", "budget_status", "financial_health_score", "sync_to_sheet"]) assert.ok(tools.includes(name), `missing ${name}`);
     for (const file of ["samples/fixtures/hdfc.csv", "samples/fixtures/sbi.csv", "samples/fixtures/icici.csv"]) {
       const parsed = await client.callTool({ name: "parse_statement", arguments: { filePath: file } });
       assert.ok(parsed.structuredContent.count >= 2, `${file} did not parse`);
       const categorized = await client.callTool({ name: "categorize_transactions", arguments: { transactions: parsed.structuredContent.transactions } });
       assert.equal(categorized.structuredContent.count, parsed.structuredContent.count);
       assert.ok(categorized.structuredContent.transactions.every((transaction) => transaction.category && transaction.confidence));
+      const analyzed = await client.callTool({ name: "analyze_finances", arguments: { transactions: categorized.structuredContent.transactions } });
+      assert.ok(analyzed.structuredContent.analysis.cashFlow);
+      assert.ok(Array.isArray(analyzed.structuredContent.analysis.timeline));
+      assert.deepEqual(analyzed.structuredContent.analysis, JSON.parse(JSON.stringify(analyzeFinances(categorized.structuredContent.transactions))));
     }
   } finally { await client.close(); await rm(dataDir, { recursive: true, force: true }); }
 });

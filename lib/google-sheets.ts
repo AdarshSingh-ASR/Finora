@@ -2,12 +2,13 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { googleSheetConnection, userLedger } from "../db/schema";
 import { getAuth } from "./auth";
-import { detectSubscriptions, monthlySummaries, normalizeMerchant } from "./finance";
+import { analyzeFinances, buildCashFlow, buildFinancialTimeline, detectSubscriptions, findSavingsOpportunities, monthlySummaries, normalizeMerchant, predictMonthEndSpending } from "./finance";
+import { planTransactionSheetSync, TRANSACTION_HEADER, transactionSheetRow } from "./sheet-sync-plan.mjs";
 import type { StatementResult, Transaction } from "./types";
 
 const SHEETS_API = "https://sheets.googleapis.com/v4";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
-const SHEET_TITLES = ["Transactions", "Monthly Summary", "Category Summary", "Merchant Summary", "Subscriptions", "Insights", "Charts"] as const;
+const SHEET_TITLES = ["Transactions", "Monthly Summary", "Category Summary", "Merchant Summary", "Subscriptions", "Insights", "Cash Flow", "Spending Classes", "Financial Timeline", "Forecast & Savings", "Charts"] as const;
 
 export class GoogleWorkspaceError extends Error {
   constructor(message: string, public status = 400, public code = "GOOGLE_API_ERROR") {
@@ -59,20 +60,26 @@ function groupedRows(transactions: Transaction[], keyFor: (transaction: Transact
 }
 
 function workbookValues(statement: StatementResult) {
-  const transactions = [["Date", "Merchant", "Description", "Direction", "Amount", "Category", "Confidence", "Source", "Explanation"], ...statement.transactions.map((transaction) => [
-    transaction.date, transaction.merchant, transaction.description, transaction.type, transaction.amount, transaction.category,
-    Math.round(transaction.confidence * 100) / 100, transaction.source, transaction.explanation,
-  ])];
-  const monthly = [["Period", "Income", "Consumption", "Transfers & investments", "Net cash flow", "Savings rate"], ...monthlySummaries(statement.transactions).map((item) => [
-    item.period, item.income, item.spend, item.transfers, item.saved, Math.round(item.savingsRate * 100) / 100,
-  ])];
+  const intelligence = analyzeFinances(statement.transactions, []);
+  const timeline = buildFinancialTimeline(statement.transactions, [], 6);
+  const forecast = predictMonthEndSpending(statement.transactions);
+  const savings = findSavingsOpportunities(statement.transactions);
+  const transactions = [TRANSACTION_HEADER, ...statement.transactions.map(transactionSheetRow)];
+  const monthly = [["Period", "Income", "Consumption", "Transfers & investments", "Net cash flow", "Savings rate", "Transfers", "Investment contributions"], ...monthlySummaries(statement.transactions).map((item) => {
+    const cashFlow = buildCashFlow(statement.transactions, item.period);
+    return [item.period, item.income, item.spend, item.transfers, item.saved, Math.round(item.savingsRate * 100) / 100, cashFlow.transfers, cashFlow.investmentContributions];
+  })];
   const categories = [["Category", "Amount", "Transactions"], ...groupedRows(statement.transactions, (transaction) => transaction.category)];
   const merchants = [["Merchant", "Amount", "Transactions"], ...groupedRows(statement.transactions, (transaction) => normalizeMerchant(transaction.merchant || transaction.description))];
   const subscriptions = [["Merchant", "Monthly cost", "Annual cost", "Occurrences", "Estimated renewal", "Confidence"], ...detectSubscriptions(statement.transactions).map((item) => [
     item.merchant, item.monthlyCost, item.annualCost, item.occurrences, item.estimatedRenewalDate, Math.round(item.confidence * 100) / 100,
   ])];
   const insights = [["Finora insight"], ...(statement.insights.length ? statement.insights : ["Import more transactions to generate grounded insights."]).map((insight) => [insight])];
-  return { Transactions: transactions, "Monthly Summary": monthly, "Category Summary": categories, "Merchant Summary": merchants, Subscriptions: subscriptions, Insights: insights, Charts: [["Finora charts"], ["Charts refresh whenever you sync this workbook."]] };
+  const cashFlow = [["Metric", "Value", "Period"], ["Income", intelligence.cashFlow.income, intelligence.period], ["Consumption", intelligence.cashFlow.consumption, intelligence.period], ["Transfers", intelligence.cashFlow.transfers, intelligence.period], ["Investment contributions", intelligence.cashFlow.investmentContributions, intelligence.period], ["Total outflow", intelligence.cashFlow.totalOutflow, intelligence.period], ["Net cash flow", intelligence.cashFlow.netCashFlow, intelligence.period], ["Savings rate", Math.round(intelligence.cashFlow.savingsRate * 100) / 100, intelligence.period]];
+  const classes = [["Classification", "Amount", "Share of consumption"], ...Object.entries({ Fixed: intelligence.classificationTotals.fixed, Variable: intelligence.classificationTotals.variable, Essential: intelligence.classificationTotals.essential, Discretionary: intelligence.classificationTotals.discretionary, "Context-dependent": intelligence.classificationTotals.neutral }).map(([label, amount]) => [label, amount, intelligence.cashFlow.consumption ? Math.round(amount / intelligence.cashFlow.consumption * 10000) / 100 : 0]), ["Subscriptions", detectSubscriptions(statement.transactions).reduce((total, item) => total + item.monthlyCost, 0), Math.round(intelligence.classificationTotals.subscriptionShare * 100) / 100]];
+  const timelineRows = [["Period", "Event", "Detail", "Type", "Significance", "Amount", "Change percent"], ...timeline.map((item) => [item.period, item.title, item.detail, item.type, item.significance, item.amount || "", item.changePercent == null ? "" : Math.round(item.changePercent * 100) / 100])];
+  const forecastRows = [["Month-end forecast", "Value", "Detail"], ["Period", forecast.period, forecast.asOfDate], ["Actual consumption", forecast.actualConsumption, "Observed so far"], ["Projected consumption", forecast.projectedConsumption, `${forecast.confidence} confidence`], ["Projected total outflow", forecast.projectedTotalOutflow, "Includes transfers and investments"], ["Projected net cash flow", forecast.projectedNetCashFlow, forecast.explanation], ["Recurring still expected", forecast.recurringStillExpected, "Included in projection"], [], ["Savings opportunity", "Monthly potential", "Evidence"], ...savings.map((item) => [item.title, item.monthlyPotential, item.detail])];
+  return { Transactions: transactions, "Monthly Summary": monthly, "Category Summary": categories, "Merchant Summary": merchants, Subscriptions: subscriptions, Insights: insights, "Cash Flow": cashFlow, "Spending Classes": classes, "Financial Timeline": timelineRows, "Forecast & Savings": forecastRows, Charts: [["Finora charts"], ["Charts refresh whenever you sync this workbook."]] };
 }
 
 type SheetMeta = { properties: { sheetId: number; title: string; gridProperties?: { rowCount?: number; columnCount?: number } }; charts?: Array<{ chartId: number }> };
@@ -95,17 +102,40 @@ async function ensureSheets(accessToken: string, spreadsheetId: string) {
   return metadata;
 }
 
+async function syncTransactionSheet(accessToken: string, spreadsheetId: string, sheetId: number, transactions: Transaction[]) {
+  const existing = await googleRequest<{ values?: unknown[][] }>(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent("'Transactions'!A2:J")}?majorDimension=ROWS`);
+  const plan = planTransactionSheetSync(existing.values || [], transactions);
+  const valueUpdates = [
+    { range: "'Transactions'!A1:J1", majorDimension: "ROWS", values: [TRANSACTION_HEADER] },
+    ...plan.updates.map((item) => ({ range: `'Transactions'!A${item.rowNumber}:J${item.rowNumber}`, majorDimension: "ROWS", values: [item.values] })),
+  ];
+  if (valueUpdates.length) await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`, {
+    method: "POST", body: JSON.stringify({ valueInputOption: "USER_ENTERED", data: valueUpdates }),
+  });
+  if (plan.appends.length) await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent("'Transactions'!A:J")}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+    method: "POST", body: JSON.stringify({ majorDimension: "ROWS", values: plan.appends }),
+  });
+  if (plan.deleteRowNumbers.length) await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, {
+    method: "POST", body: JSON.stringify({ requests: plan.deleteRowNumbers.map((rowNumber) => ({ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: rowNumber - 1, endIndex: rowNumber } } })) }),
+  });
+  return plan;
+}
+
 async function writeWorkbook(accessToken: string, spreadsheetId: string, statement: StatementResult) {
   const values = workbookValues(statement);
   const metadata = await ensureSheets(accessToken, spreadsheetId);
   const byTitle = new Map((metadata.sheets || []).map((sheet) => [sheet.properties.title, sheet]));
 
+  const transactionsSheet = byTitle.get("Transactions");
+  if (!transactionsSheet) throw new GoogleWorkspaceError("The Transactions sheet could not be created.", 502);
+  await syncTransactionSheet(accessToken, spreadsheetId, transactionsSheet.properties.sheetId, statement.transactions);
+
   await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchClear`, {
-    method: "POST", body: JSON.stringify({ ranges: SHEET_TITLES.map((title) => `'${title}'`) }),
+    method: "POST", body: JSON.stringify({ ranges: SHEET_TITLES.filter((title) => title !== "Transactions").map((title) => `'${title}'`) }),
   });
   await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`, {
     method: "POST",
-    body: JSON.stringify({ valueInputOption: "USER_ENTERED", data: Object.entries(values).map(([title, rows]) => ({ range: `'${title}'!A1`, majorDimension: "ROWS", values: rows })) }),
+    body: JSON.stringify({ valueInputOption: "USER_ENTERED", data: Object.entries(values).filter(([title]) => title !== "Transactions").map(([title, rows]) => ({ range: `'${title}'!A1`, majorDimension: "ROWS", values: rows })) }),
   });
 
   const requests: Record<string, unknown>[] = [];
@@ -115,13 +145,14 @@ async function writeWorkbook(accessToken: string, spreadsheetId: string, stateme
     requests.push(
       { updateSheetProperties: { properties: { sheetId: sheet.properties.sheetId, gridProperties: { frozenRowCount: 1 } }, fields: "gridProperties.frozenRowCount" } },
       { repeatCell: { range: { sheetId: sheet.properties.sheetId, startRowIndex: 0, endRowIndex: 1 }, cell: { userEnteredFormat: { backgroundColor: { red: .06, green: .20, blue: .16 }, textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true } } }, fields: "userEnteredFormat(backgroundColor,textFormat)" } },
-      { autoResizeDimensions: { dimensions: { sheetId: sheet.properties.sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: title === "Transactions" ? 9 : 6 } } },
+      { autoResizeDimensions: { dimensions: { sheetId: sheet.properties.sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: title === "Transactions" ? 10 : title === "Financial Timeline" ? 7 : 6 } } },
     );
   }
 
   const chartsSheet = byTitle.get("Charts");
   const monthlySheet = byTitle.get("Monthly Summary");
   const categorySheet = byTitle.get("Category Summary");
+  const classSheet = byTitle.get("Spending Classes");
   for (const chart of chartsSheet?.charts || []) requests.push({ deleteEmbeddedObject: { objectId: chart.chartId } });
   const monthlyRows = values["Monthly Summary"].length;
   if (chartsSheet && monthlySheet && monthlyRows > 1) requests.push({ addChart: { chart: {
@@ -136,6 +167,11 @@ async function writeWorkbook(accessToken: string, spreadsheetId: string, stateme
       domains: [{ domain: { sourceRange: { sources: [{ sheetId: categorySheet.properties.sheetId, startRowIndex: 0, endRowIndex: categoryRows, startColumnIndex: 0, endColumnIndex: 1 }] } } }],
       series: [{ series: { sourceRange: { sources: [{ sheetId: categorySheet.properties.sheetId, startRowIndex: 0, endRowIndex: categoryRows, startColumnIndex: 1, endColumnIndex: 2 }] } } }],
     } }, position: { overlayPosition: { anchorCell: { sheetId: chartsSheet.properties.sheetId, rowIndex: 21, columnIndex: 0 }, widthPixels: 720, heightPixels: 360 } },
+  } } });
+  const classRows = values["Spending Classes"].length;
+  if (chartsSheet && classSheet && classRows > 1) requests.push({ addChart: { chart: {
+    spec: { title: "Fixed versus variable spending", pieChart: { legendPosition: "RIGHT_LEGEND", domain: { sourceRange: { sources: [{ sheetId: classSheet.properties.sheetId, startRowIndex: 1, endRowIndex: Math.min(3, classRows), startColumnIndex: 0, endColumnIndex: 1 }] } }, series: { sourceRange: { sources: [{ sheetId: classSheet.properties.sheetId, startRowIndex: 1, endRowIndex: Math.min(3, classRows), startColumnIndex: 1, endColumnIndex: 2 }] } } } },
+    position: { overlayPosition: { anchorCell: { sheetId: chartsSheet.properties.sheetId, rowIndex: 2, columnIndex: 10 }, widthPixels: 520, heightPixels: 330 } },
   } } });
 
   if (requests.length) await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: "POST", body: JSON.stringify({ requests }) });
@@ -167,7 +203,7 @@ export async function inspectSpreadsheet(userId: string) {
   const connection = connectedWorkbook(await getSheetConnection(userId));
   const accessToken = await googleToken(userId);
   const metadata = await spreadsheetMetadata(accessToken, connection.spreadsheetId);
-  const ranges = ["'Transactions'!A1:I5", "'Monthly Summary'!A1:F5", "'Category Summary'!A1:C8", "'Merchant Summary'!A1:C8", "'Subscriptions'!A1:F8", "'Insights'!A1:A5", "'Charts'!A1:B3"];
+  const ranges = ["'Transactions'!A1:J5", "'Monthly Summary'!A1:H5", "'Category Summary'!A1:C8", "'Merchant Summary'!A1:C8", "'Subscriptions'!A1:F8", "'Insights'!A1:A5", "'Cash Flow'!A1:C10", "'Spending Classes'!A1:C10", "'Financial Timeline'!A1:G8", "'Forecast & Savings'!A1:C12", "'Charts'!A1:B3"];
   const params = new URLSearchParams();
   for (const range of ranges) params.append("ranges", range);
   params.set("majorDimension", "ROWS");

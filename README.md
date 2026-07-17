@@ -10,8 +10,9 @@ Turn bank, credit-card, and UPI statements into a clean financial memory that wo
 [![Node.js](https://img.shields.io/badge/Node.js-22.13%2B-247a55?style=flat-square)](https://nodejs.org/)
 [![MCP](https://img.shields.io/badge/MCP-enabled-11a683?style=flat-square)](./mcp/server.mjs)
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-installable-3b82f6?style=flat-square)](./skills/finora-finance)
+[![Live](https://img.shields.io/badge/Live-finora.workers.dev-16b88b?style=flat-square)](https://finora.finora-asr.workers.dev)
 
-[Demo](#demo) · [How it works](#how-it-works) · [Run locally](#run-locally) · [MCP and Skill](#mcp-server-and-agent-skill)
+[Live app](https://finora.finora-asr.workers.dev) · [Demo](#demo) · [How it works](#how-it-works) · [Run locally](#run-locally) · [MCP and Skill](#mcp-server-and-agent-skill)
 
 </div>
 
@@ -52,14 +53,14 @@ Raw uploads are processed in the request and are not kept. Only the normalized l
 
 | Area | What is implemented |
 | --- | --- |
-| Statement intake | PDF, CSV, XLS/XLSX, screenshots, receipt images, bank exports, card statements, and UPI history |
+| Statement intake | PDF, CSV, XLS/XLSX, screenshots, receipt images, bank exports, card statements, and UPI history; large AI-read documents are adaptively split into verified transaction ranges |
 | Explainable ledger | Merchant normalization, categories, confidence scores, reasons, and user corrections |
-| Spending intelligence | Monthly summaries, category and merchant trends, budgets, financial-health score, and weekly/monthly reports |
+| Financial intelligence | Cash flow, savings rate, fixed/variable and essential/discretionary spending, category and merchant trends, budgets, forecasts, six-month timelines, and financial-health reports |
 | Pattern detection | Recurring subscriptions, estimated renewals, annualized cost, possible duplicates, and unusual transactions |
-| Natural-language queries | Ask about food, travel, merchants, periods, subscriptions, duplicates, budgets, or any imported transaction |
-| Google Sheets | Create or connect a workbook; sync transactions, summaries, merchants, categories, subscriptions, insights, and charts |
+| Ask Finora | Query-aware responses that stay concise for factual lookups and add relevant charts, tables, forecasts, timelines, or follow-ups only when they improve the answer |
+| Google Sheets | Create or connect a workbook; incrementally reconcile new or corrected transactions without duplicating existing rows, then refresh summaries and charts |
 | Agent access | Local MCP server plus an authenticated Agent Skill for Codex, Claude, and compatible clients |
-| Account security | Google sign-in, encrypted OAuth tokens, scoped Sheets/Gmail consent, revocable agent tokens, and per-user D1 storage |
+| Account and data control | Google sign-in, encrypted OAuth tokens, scoped Sheets/Gmail consent, revocable agent tokens, per-user D1 storage, and confirmed full-ledger deletion |
 
 Examples of questions Finora can answer:
 
@@ -91,7 +92,7 @@ flowchart LR
     I --> J
 ```
 
-The app uses a structured transaction contract throughout the web app, Sheets exporter, reports, MCP server, and Agent Skill. A correction made to the ledger therefore changes every downstream view without maintaining separate copies of the same financial data.
+The app uses a structured transaction contract and one deterministic finance engine throughout the web app, Sheets exporter, reports, MCP server, and Agent Skill. A correction made to the ledger therefore changes every downstream view without maintaining separate copies of the same financial data. Model calls extract unfamiliar source formats and explain verified results; they do not invent totals.
 
 ## Architecture
 
@@ -122,8 +123,8 @@ flowchart TB
 ### Main components
 
 - **Web application:** Next.js/React UI built with Vinext for Cloudflare Workers.
-- **Finance engine:** deterministic summaries, comparisons, subscriptions, duplicates, anomalies, budgets, merchant cleanup, and fallback question answering.
-- **Statement intelligence:** multimodal normalization for unfamiliar documents, with a deterministic CSV path that works without an AI credential.
+- **Finance engine:** deterministic cash-flow classifications, summaries, comparisons, subscriptions, duplicates, anomalies, budgets, forecasts, financial timelines, merchant cleanup, and question-grounded analysis.
+- **Statement intelligence:** multimodal normalization for unfamiliar documents, adaptive range splitting for large statements, and a deterministic CSV path that works without an AI credential.
 - **Persistence:** Cloudflare D1 stores accounts, sessions, normalized ledgers, budgets, chat history, report settings, Sheets connections, and hashed agent tokens.
 - **Google integrations:** Better Auth requests `drive.file` and `gmail.send` only when the relevant feature is enabled.
 - **Agent surfaces:** a local composable MCP server and a remote, authenticated Agent Skill backed by Finora's API.
@@ -132,14 +133,14 @@ flowchart TB
 
 The MCP server is a product surface, not a single “do everything” wrapper. Agents can choose the smallest tool needed and stop before a write.
 
-| Workflow | Focused MCP tools |
+| Outcome | Recommended MCP tools |
 | --- | --- |
-| Parse | `parse_statement` |
-| Clean and classify | `normalize_merchants`, `categorize_transactions` |
-| Review and save | `save_transactions`, `correct_category`, `search_transactions` |
-| Understand | `summarize_transactions`, `monthly_summary`, `merchant_analysis`, `spending_trends`, `compare_months`, `answer_finance_question` |
-| Protect | `detect_subscriptions`, `find_duplicate_transactions`, `detect_spending_anomalies`, `budget_status`, `financial_health_score` |
-| Export | `sync_to_sheet`, `export_sheet` |
+| Import an unfamiliar statement end to end | `sync_statement` |
+| Understand a period | `analyze_finances`, `answer_finance_question` |
+| Explain and forecast | `explain_spending_change`, `predict_month_end_spending`, `financial_timeline` |
+| Find realistic savings | `find_savings`, `find_cost_cutting`, `why_is_budget_exceeded`, `suggest_budget` |
+| Build a report | `generate_dashboard`, `financial_health_report` |
+| Precise advanced work | `parse_statement`, `categorize_transactions`, `search_transactions`, `sync_to_sheet`, and focused Sheet range tools |
 
 Run the local MCP server:
 
@@ -187,9 +188,11 @@ On the first sync, the user grants the narrow `drive.file` scope. Finora can the
 - Merchant Summary
 - Subscriptions
 - Insights
+- Financial Timeline
+- Forecast & Savings
 - Charts
 
-Users can open, resync, rename, copy, move, share, disconnect, or delete the workbook from Finora. Future syncs update the same file.
+Users can open, resync, rename, copy, move, share, disconnect, or delete the workbook from Finora. Future syncs reconcile transaction identities: unchanged rows stay in place, corrected rows are updated, and only genuinely new transactions are appended before the analytical tabs and charts refresh.
 
 ## Built with Codex and GPT-5.6
 
@@ -319,7 +322,7 @@ npm run build
 
 ## Demo
 
-> **Live demo:** add the deployed Cloudflare URL here before submitting.
+> **Live demo:** [https://finora.finora-asr.workers.dev](https://finora.finora-asr.workers.dev)
 
 > **Demo video:** add the public YouTube link here. OpenAI Build Week requires a video under three minutes showing the working project and explaining how Codex and GPT-5.6 were used.
 
@@ -331,6 +334,7 @@ Suggested judge walkthrough:
 4. Ask Finora a natural-language question and inspect the supporting transactions.
 5. Sync the ledger to Google Sheets and open the generated charts.
 6. Run `$finora-finance skill-sync` in Codex and ask for the same result through the skill.
+7. Import another statement and resync Sheets to show identity-based incremental reconciliation.
 
 ### Screenshots and GIFs
 
@@ -358,13 +362,13 @@ Finora/
 ├── components/              # Reusable UI components
 ├── db/                      # D1 schema and database access
 ├── drizzle/                 # Versioned D1 migrations
-├── lib/                     # Finance engine, auth, AI, Sheets, and email logic
+├── lib/                     # Finance engine, adaptive statement parsing, auth, AI, Sheets, and email logic
 ├── mcp/                     # Composable MCP server
 ├── samples/                 # Judge-friendly sample statements
 ├── skills/
 │   ├── finora-finance/      # Installable authenticated Agent Skill
 │   └── finora-money/        # Local MCP workflow skill
-├── tests/                   # Build, MCP, and provider tests
+├── tests/                   # Build, finance, statement chunking, Sheets, MCP, and provider tests
 └── worker/                  # Cloudflare Worker and report scheduler
 ```
 
@@ -381,7 +385,7 @@ Finora/
 ## Future improvements
 
 - password-protected statement PDFs;
-- more robust OCR review for low-quality scans;
+- page-level OCR review and manual rescue for genuinely unreadable scans;
 - user-defined merchant and category rules that persist across imports;
 - bank/email ingestion with explicit, narrow permissions;
 - shared household ledgers and role-based access;

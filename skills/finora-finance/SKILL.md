@@ -21,11 +21,19 @@ If no server is configured, run `node <skill-directory>/scripts/finora.mjs confi
 
 ## Route requests
 
-Use the smallest matching backend action. Read [references/api.md](references/api.md) when an action's payload is unclear.
+Prefer the highest-level outcome action that matches the user's goal. Use low-level ledger or spreadsheet actions only for explicit row, range, correction, or workbook-management requests. Read [references/api.md](references/api.md) when an action's payload is unclear.
 
-- Statement attachment or import: `upload <path>`. Ask whether to append or replace only when replacing an existing ledger is material.
-- General finance question or follow-up: `ask "<question>"`.
+- End-to-end statement workflow: `upload <path>` for the interactive client, or `call sync_statement @payload.json` when parse, normalize, categorize, review, save, and optional Sheets sync should be coordinated. Ask before destructive ledger replacement.
+- General finance question or follow-up: `ask "<question>"`; use `call answer_finance_question question="..."` when a structured API result is needed.
 - Account/ledger readiness: `skill-sync`.
+- Full period analysis: `call analyze_finances period=YYYY-MM`.
+- Visual report/dashboard: `call generate_dashboard period=YYYY-MM`. Add `syncSheets=true` only when the user asks to update Google Sheets.
+- Six-month narrative: `call financial_timeline months=6`.
+- Savings opportunities or realistic reductions: `call find_savings` or `call find_cost_cutting`.
+- Explain a change: `call explain_spending_change current=YYYY-MM previous=YYYY-MM`.
+- Forecast the current month: `call predict_month_end_spending period=YYYY-MM`.
+- Financial health: `call financial_health_report period=YYYY-MM`.
+- Budget recommendation or overrun explanation: `call suggest_budget` or `call why_is_budget_exceeded category="Food & Dining" period=YYYY-MM`.
 - Totals or category breakdown: `call summary`.
 - Monthly history or trend: `call monthly_summary`.
 - Period comparison: `call compare_months current=YYYY-MM previous=YYYY-MM`.
@@ -47,7 +55,8 @@ Use the smallest matching backend action. Read [references/api.md](references/ap
 - Treat parsing, imports, ledger replacement, report changes, and Sheets sync as writes. Confirm before a destructive replacement, tab/range deletion, workbook deletion, sharing, or scheduled email change. An explicit user request to do the action counts as confirmation.
 - Include person-to-person transfers and investments by default. Label and subtotal them separately; exclude them only if the user explicitly asks.
 - Preserve uncertainty and confidence. Describe duplicates and anomalies as possible findings, not facts.
-- Keep answers concise and ledger-grounded. Use the backend's answer verbatim when it is already clear; otherwise summarize without changing numbers.
+- Lead with the direct answer. Add supporting merchants, categories, comparisons, anomalies, forecast or budget implications only when they materially help. Use returned bar, line, donut, table, or timeline data instead of inventing a visualization. Use a trusted Finora HTML report for a financial review or dashboard, never model-authored arbitrary HTML.
+- Offer two to four contextual next questions after a rich analysis. Do not turn a simple lookup into a long report.
 - Never expose authentication material, Google OAuth tokens, raw API payload secrets, or the local credential file.
 - Do not give investment, tax, legal, or credit advice. Provide factual ledger analysis and suggest a qualified professional for high-stakes decisions.
 

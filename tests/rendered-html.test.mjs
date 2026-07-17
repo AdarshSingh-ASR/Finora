@@ -14,11 +14,13 @@ test("build contains the Finora product experience", async () => {
   const statementParser = await readFile(new URL("../lib/statement-parser.ts", import.meta.url), "utf8");
   const actions = await readFile(new URL("../lib/agent-actions.ts", import.meta.url), "utf8");
   const analyst = await readFile(new URL("../lib/analyst.ts", import.meta.url), "utf8");
+  const intelligence = await readFile(new URL("../lib/finance-intelligence.mjs", import.meta.url), "utf8");
   const page = `${landing}\n${dashboard}`;
   const assetsDirectory = new URL("../dist/client/assets/", import.meta.url);
   const assets = await readdir(assetsDirectory);
   assert.ok(assets.some((asset) => asset.startsWith("page-") && asset.endsWith(".js")), "missing compiled page asset");
   assert.match(page, /Finora|finora/); assert.match(page, /Your money/); assert.match(page, /Transactions/); assert.match(page, /FINANCIAL HEALTH/); assert.match(page, /SUBSCRIPTIONS/); assert.match(page, /Google Sheets|Sync Sheets/);
+  assert.match(dashboard, /Clear all transactions/);
   assert.match(page, /Sign in/); assert.match(page, /AI Reports/); assert.match(page, /Every Sunday/); assert.match(page, /First of every month/);
   assert.match(dashboard, /Create Finora Financial Dashboard/); assert.match(dashboard, /Open Sheet/); assert.match(dashboard, /Disconnect from Finora/);
   assert.doesNotMatch(dashboard, /Apps Script web app URL|Matches FINORA_SECRET/);
@@ -28,6 +30,7 @@ test("build contains the Finora product experience", async () => {
   assert.ok((await stat(new URL("../public/downloads/finora-finance.zip", import.meta.url))).size > 1_000, "missing packaged Finora skill");
   assert.match(dashboard, /No sample transactions\. Your dashboard starts empty\./);
   assert.match(dashboard, /AnalystReport/); assert.match(dashboard, /What Finora noticed/); assert.match(dashboard, /VISUAL BREAKDOWN/);
+  assert.match(dashboard, /FinancialTimeline/); assert.match(dashboard, /analystHtml/); assert.match(dashboard, /exportData\("html"\)/);
   assert.match(dashboard, /sidebar-agent-section/); assert.match(dashboard, /sidebar-new-chat/); assert.match(dashboard, /RECENT CHATS/);
   assert.doesNotMatch(dashboard, /finora-chat-header|finora-chat-history|finora-history-new/);
   assert.match(askRoute, /buildAnalystResponse/); assert.match(askRoute, /proactive, evidence-based personal finance analyst/);
@@ -40,6 +43,10 @@ test("build contains the Finora product experience", async () => {
   assert.match(agentRoute, /processStatementInput/); assert.match(agentRoute, /answerWithFinora/); assert.match(statementParser, /parseCsvFallback/); assert.doesNotMatch(agentRoute, /fetch\(new URL\("\/api\/(?:categorize|ask)"/);
   assert.match(agentRoute, /sheet_inspect/); assert.match(agentRoute, /sheet_add_tab/); assert.match(agentRoute, /sheet_read_range/); assert.match(agentRoute, /sheet_update_range/); assert.match(agentRoute, /sheet_unshare/); assert.match(agentRoute, /sheet_delete/); assert.match(sheetLibrary, /inspectSpreadsheet/); assert.match(sheetLibrary, /readSpreadsheetRange/); assert.match(sheetLibrary, /unshareSpreadsheet/);
   assert.match(agentRoute, /add_transaction/); assert.match(agentRoute, /delete_transactions/); assert.match(agentRoute, /monthly_report/); assert.match(agentRoute, /report_settings_clear/);
+  assert.match(agentRoute, /sync_statement/); assert.match(agentRoute, /analyze_finances/); assert.match(agentRoute, /financial_timeline/); assert.match(intelligence, /buildFinanceGraph/); assert.match(sheetLibrary, /Financial Timeline/); assert.match(sheetLibrary, /Forecast & Savings/);
+  assert.match(statementParser, /CHUNK_SIZE = 60/); assert.match(statementParser, /generateAdaptiveStatementRange/); assert.match(statementParser, /transactions \$\{start\} through \$\{end\}/);
+  assert.match(analyst, /Savings and cash flow/); assert.match(analyst, /Merchant breakdown/); assert.doesNotMatch(analyst, /\(isReport \|\| isComparison \? \{ forecast:/);
+  assert.match(analyst, /Transaction count/); assert.match(analyst, /asksForSimpleOutflow/); assert.match(dashboard, /hasRichAnalystModules/);
   assert.doesNotMatch(dashboard, /Finding transactions with/);
   assert.doesNotMatch(page, /sampleStatement|defaultBudgets|codex-preview|Your site is taking shape|react-loading-skeleton/);
 });

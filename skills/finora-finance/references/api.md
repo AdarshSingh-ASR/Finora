@@ -9,6 +9,16 @@ Pass simple payloads as cross-platform `key=value` arguments, for example `call 
 | Action | Optional fields | Result |
 | --- | --- | --- |
 | `skill_sync` | none | Connection, ledger periods, Sheets and report state |
+| `analyze_finances` | optional `period` | Explicit cash flow, classifications, trends, merchants, anomalies, savings, forecast, timeline, and graph |
+| `generate_dashboard` | optional `period`; optional `syncSheets` | Structured visual report; optionally updates the managed Google workbook |
+| `find_savings` / `find_cost_cutting` | optional `period` | Evidence-backed savings opportunities and realistic reductions |
+| `financial_health_report` | optional `period` | Explained savings, cash flow, budgets, subscriptions, consistency, and score components |
+| `explain_spending_change` | optional `current`, `previous` | Category and merchant drivers of a period change |
+| `why_is_budget_exceeded` | `category`; optional `period` | Transactions and changes responsible for a category overrun |
+| `suggest_budget` | optional `bufferPercent` | Category limits from up to three completed months |
+| `predict_month_end_spending` | optional `period` | Run-rate and recurring-payment forecast with confidence |
+| `financial_timeline` | optional `months` (maximum 6) | Material month-by-month events with evidence links |
+| `finance_graph` | optional `period` | Derived transaction, merchant, category, period, subscription, budget, and anomaly graph |
 | `summary` | none | Income, consumption, transfers/investments, savings and categories |
 | `monthly_summary` / `spending_trends` | none | Monthly time series |
 | `compare_months` | `current`, `previous` (`YYYY-MM`) | Period and category changes |
@@ -28,6 +38,7 @@ Pass simple payloads as cross-platform `key=value` arguments, for example `call 
 
 ## Write actions
 
+- `sync_statement`: coordinated parse, normalize, categorize, save, analysis, and optional Sheets sync; accepts the same file fields as `import_statement`, optional `replace`, and optional `syncSheets`.
 - `import_statement`: `filename`, `mimeType`, and either `text` or a base64 `fileData`; optional `replace`.
 - `save_ledger`: full canonical `statement` and optional `budgets`.
 - `add_transaction`: `date`, `merchant`, `amount`, `type`/`direction`, `category`, optional `description`.

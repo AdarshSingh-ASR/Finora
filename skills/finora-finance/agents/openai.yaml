@@ -1,4 +1,4 @@
 interface:
   display_name: "Finora Finance"
   short_description: "Use your Finora account from any AI agent"
-  default_prompt: "Use $finora-finance to connect my Finora account and summarize this month's spending."
+  default_prompt: "Use $finora-finance to analyze my finances, explain material changes, and show the most useful evidence-backed next step."
