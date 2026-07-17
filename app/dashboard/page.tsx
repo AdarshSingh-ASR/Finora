@@ -176,7 +176,7 @@ function ChatWorkspace({ messages, question, asking, transactionCount, attachmen
             <div className="finora-chat-avatar">{message.role === "assistant" ? <Mark/> : <UserRound size={16}/>}</div>
             <div>
               <span>{message.role === "assistant" ? "Finora" : "You"}</span>
-              {message.role === "assistant" ? <><div className="finora-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>{message.analysis && <AnalystReport analysis={message.analysis} onAsk={onAsk}/>}</> : <><p>{message.content}</p>{message.attachments?.length ? <div className="finora-message-files">{message.attachments.map((file) => <span key={file.id}><FileCheck2 size={13}/><b>{file.name}</b><small>{file.transactionCount} found</small></span>)}</div> : null}</>}
+              {message.role === "assistant" ? <><div className="finora-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>{message.analysis && <AnalystReport analysis={message.analysis} onAsk={onAsk}/>}</> : <>{message.attachments?.length ? <div className="finora-message-files">{message.attachments.map((file) => <span key={file.id}><FileCheck2 size={13}/><b>{file.name}</b><small>{file.transactionCount} found</small></span>)}</div> : null}<p>{message.content}</p></>}
               {message.role === "assistant" && message.actions?.length ? <section className="finora-agent-actions" aria-label="Finora actions">
                 <header><span><Zap size={13}/>READY TO DO</span><small>Nothing runs until you approve it.</small></header>
                 <div>{message.actions.map((action) => <article className={action.status} key={action.id}>
