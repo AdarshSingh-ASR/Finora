@@ -100,8 +100,9 @@ export function sanitizeAgentActions(input: unknown): AgentAction[] {
 export function fallbackAgentActions(question: string, attachmentCount: number): AgentAction[] {
   const lower = question.toLowerCase();
   const raw: Array<Partial<AgentAction> & { type: AgentActionType; payload?: Partial<AgentActionPayload> }> = [];
-  if (attachmentCount && /\b(import|add|save|merge|categorize)\b/.test(lower)) raw.push({ type: "import_attachments", label: "Add files to your ledger", description: `Import and categorize transactions from ${attachmentCount} attached file${attachmentCount === 1 ? "" : "s"}.` });
-  if (/\b(sync|update|upload|send|push)\b.*\b(sheet|sheets|spreadsheet)\b|\b(sheet|sheets|spreadsheet)\b.*\b(sync|update|upload|send|push)\b/.test(lower)) raw.push({ type: "sync_sheet", label: "Sync Google Sheets", description: "Update the connected workbook with the latest Finora ledger." });
+  const sheetIntent = /\b(sheet|sheets|spreadsheet|workbook)\b/.test(lower);
+  if (attachmentCount && !sheetIntent && /\b(import|add|save|merge|categorize)\b/.test(lower)) raw.push({ type: "import_attachments", label: "Add files to your ledger", description: `Import and categorize transactions from ${attachmentCount} attached file${attachmentCount === 1 ? "" : "s"}.` });
+  if (sheetIntent && /\b(sync|update|upload|send|push|add|put|write)\b/.test(lower)) raw.push({ type: "sync_sheet", label: "Sync Google Sheets", description: attachmentCount ? `Write the ${attachmentCount} attached file${attachmentCount === 1 ? "" : "s"} to your connected Finora workbook.` : "Update the connected workbook with the latest Finora ledger." });
   if (/\b(create|make|new)\b.*\b(sheet|spreadsheet|workbook)\b/.test(lower)) raw.push({ type: "create_sheet", label: "Create financial workbook", description: "Create and connect a new Finora Google Sheets dashboard." });
   if (/\b(report|review|summary)\b/.test(lower)) raw.push({ type: "open_reports", label: "Open AI Reports", description: "Open your weekly and monthly financial report workspace.", requiresConfirmation: false });
   return sanitizeAgentActions(raw.map((item) => ({ ...item, requiresConfirmation: item.requiresConfirmation ?? true, payload: { ...blankPayload, ...item.payload } })));

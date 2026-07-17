@@ -172,13 +172,13 @@ export async function listSpreadsheets(userId: string, search = "") {
   return result.files || [];
 }
 
-export async function createSpreadsheet(userId: string, requestedName?: unknown) {
+export async function createSpreadsheet(userId: string, requestedName?: unknown, statementOverride?: StatementResult) {
   const accessToken = await googleToken(userId);
   const name = cleanName(requestedName);
   const created = await googleRequest<{ spreadsheetId: string; spreadsheetUrl: string; properties?: { title?: string } }>(accessToken, `${SHEETS_API}/spreadsheets?fields=spreadsheetId,spreadsheetUrl,properties(title)`, {
     method: "POST", body: JSON.stringify({ properties: { title: name }, sheets: SHEET_TITLES.map((title) => ({ properties: { title } })) }),
   });
-  const { statement } = await ledgerFor(userId);
+  const statement = statementOverride || (await ledgerFor(userId)).statement;
   await writeWorkbook(accessToken, created.spreadsheetId, statement);
   return saveConnection(userId, { spreadsheetId: created.spreadsheetId, spreadsheetUrl: created.spreadsheetUrl, name: created.properties?.title || name });
 }
@@ -191,11 +191,11 @@ export async function connectSpreadsheet(userId: string, spreadsheetId: string) 
   return saveConnection(userId, { spreadsheetId, spreadsheetUrl: metadata.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`, name: metadata.properties?.title || "Finora Financial Dashboard" });
 }
 
-export async function syncSpreadsheet(userId: string) {
+export async function syncSpreadsheet(userId: string, statementOverride?: StatementResult) {
   const connection = await getSheetConnection(userId);
   if (!connection) throw new GoogleWorkspaceError("Create or select a spreadsheet first.", 404, "SHEET_CONNECTION_REQUIRED");
   const accessToken = await googleToken(userId);
-  const { statement } = await ledgerFor(userId);
+  const statement = statementOverride || (await ledgerFor(userId)).statement;
   const metadata = await writeWorkbook(accessToken, connection.spreadsheetId, statement);
   return saveConnection(userId, { spreadsheetId: connection.spreadsheetId, spreadsheetUrl: metadata.spreadsheetUrl || connection.spreadsheetUrl, name: metadata.properties?.title || connection.name, folderId: connection.folderId });
 }

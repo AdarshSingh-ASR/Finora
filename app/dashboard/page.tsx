@@ -28,12 +28,29 @@ import { fallbackAgentActions, sanitizeAgentActions, type AgentAction, type Chat
 type View = "overview" | "transactions" | "reports" | "agent";
 type Toast = { tone: "good" | "bad"; message: string } | null;
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string; analysis?: AnalystResponse; actions?: AgentAction[]; attachments?: ChatAttachmentMeta[]; evidenceScope?: "attachments" | "combined" | "ledger" };
-type ChatThread = { id: string; title: string; messages: ChatMessage[]; createdAt: string; updatedAt: string };
+type ChatThread = { id: string; title: string; messages: ChatMessage[]; attachmentContext?: ChatAttachment[]; createdAt: string; updatedAt: string };
 type ChatAttachment = ChatAttachmentMeta & { mimeType: string; status: "reading" | "ready" | "error"; statement?: StatementResult; error?: string };
 type SheetConnection = { spreadsheetId: string; spreadsheetUrl: string; name: string; folderId?: string | null; lastSyncedAt: string; stale?: boolean };
 type SheetFile = { id: string; name: string; webViewLink?: string; modifiedTime?: string; parents?: string[] };
 
 const emptyStatement: StatementResult = { accountName: "", bankName: "", period: "", currency: "INR", transactions: [], insights: [] };
+
+function statementFromAttachments(attachments: ChatAttachment[], base?: StatementResult): StatementResult | null {
+  const ready = attachments.filter((attachment) => attachment.status === "ready" && attachment.statement);
+  if (!ready.length) return base || null;
+  const first = ready[0].statement!;
+  const transactions = [...(base?.transactions || [])];
+  const known = new Set(transactions.map((transaction) => `${transaction.date}|${transaction.merchant.toLowerCase()}|${transaction.type}|${transaction.amount}`));
+  for (const transaction of ready.flatMap((attachment) => attachment.statement?.transactions || [])) {
+    const key = `${transaction.date}|${transaction.merchant.toLowerCase()}|${transaction.type}|${transaction.amount}`;
+    if (!known.has(key)) { transactions.push(transaction); known.add(key); }
+  }
+  return {
+    accountName: base?.accountName || first.accountName, bankName: base?.bankName || first.bankName,
+    period: base?.period || first.period, currency: base?.currency || first.currency, transactions,
+    insights: [...ready.flatMap((attachment) => attachment.statement?.insights || []), ...(base?.insights || [])].slice(0, 3),
+  };
+}
 
 function MiniTrend({ values, large = false }: { values: number[]; large?: boolean }) {
   if (!values.length) return null;
@@ -442,7 +459,11 @@ export default function Home() {
       if (cancelled) return;
       const chats = Array.isArray(result.chats) ? result.chats as ChatThread[] : [];
       setChatThreads(chats);
-      if (chats[0]) { setActiveChatId(chats[0].id); setChatMessages(chats[0].messages); }
+      if (chats[0]) {
+        const context = chats[0].attachmentContext || [];
+        setActiveChatId(chats[0].id); setChatMessages(chats[0].messages);
+        chatContextAttachmentsRef.current = context; setChatContextAttachments(context);
+      }
     }).catch((error) => !cancelled && notify(error instanceof Error ? error.message : "Could not load chat history.", "bad"));
     return () => { cancelled = true; };
   }, [userId]);
@@ -648,17 +669,24 @@ export default function Home() {
     setSynced(false);
   }
 
-  async function exportData(format: "csv" | "json" | "xlsx" | "markdown") {
+  async function exportData(format: "csv" | "json" | "xlsx" | "markdown", sourceStatement = statement) {
     const header = ["Date", "Merchant", "Description", "Type", "Amount", "Category", "Confidence"];
-    const rows = statement.transactions.map((t) => [t.date, t.merchant, t.description, t.type, t.amount, t.category, t.confidence]);
+    const sourcePeriod = latestPeriod(sourceStatement.transactions);
+    const sourceSummary = summarize(inPeriod(sourceStatement.transactions, sourcePeriod));
+    const sourceSubscriptions = detectSubscriptions(sourceStatement.transactions);
+    const sourceAnomalies = detectAnomalies(sourceStatement.transactions);
+    const sourceBudgetStatuses = budgetStatus(sourceStatement.transactions, budgets, sourcePeriod);
+    const sourceHealth = financialHealthScore(sourceStatement.transactions, budgets);
+    const sourceCategories = Object.entries(sourceSummary.byCategory).sort((a, b) => b[1] - a[1]);
+    const rows = sourceStatement.transactions.map((t) => [t.date, t.merchant, t.description, t.type, t.amount, t.category, t.confidence]);
     if (format === "xlsx") {
       const XLSX = await import("xlsx"); const book = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([header, ...rows]), "Transactions");
-      XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet([{ Period: activePeriod, Income: summary.income, Spent: summary.spend, Saved: summary.saved, "Health score": health.score }]), "Summary");
+      XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet([{ Period: sourcePeriod, Income: sourceSummary.income, Spent: sourceSummary.spend, Saved: sourceSummary.saved, "Health score": sourceHealth.score }]), "Summary");
       XLSX.writeFile(book, "finora-report.xlsx"); notify("Excel workbook exported."); return;
     }
-    const content = format === "json" ? JSON.stringify({ statement, summary, subscriptions, anomalies, budgets: budgetStatuses, health }, null, 2)
-      : format === "markdown" ? `# Finora money report\n\n**Period:** ${activePeriod}\n\n- Income: ${money(summary.income)}\n- Spent: ${money(summary.spend)}\n- Saved: ${money(summary.saved)}\n- Health score: ${health.score}/100\n\n## Categories\n${categoryEntries.map(([category, amount]) => `- ${category}: ${money(amount)}`).join("\n")}\n\n## Subscriptions\n${subscriptions.map((item) => `- ${item.merchant}: ${money(item.monthlyCost)}/month`).join("\n") || "None detected"}`
+    const content = format === "json" ? JSON.stringify({ statement: sourceStatement, summary: sourceSummary, subscriptions: sourceSubscriptions, anomalies: sourceAnomalies, budgets: sourceBudgetStatuses, health: sourceHealth }, null, 2)
+      : format === "markdown" ? `# Finora money report\n\n**Period:** ${sourcePeriod}\n\n- Income: ${money(sourceSummary.income)}\n- Spent: ${money(sourceSummary.spend)}\n- Saved: ${money(sourceSummary.saved)}\n- Health score: ${sourceHealth.score}/100\n\n## Categories\n${sourceCategories.map(([category, amount]) => `- ${category}: ${money(amount)}`).join("\n")}\n\n## Subscriptions\n${sourceSubscriptions.map((item) => `- ${item.merchant}: ${money(item.monthlyCost)}/month`).join("\n") || "None detected"}`
       : [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
     const mime = format === "json" ? "application/json" : format === "markdown" ? "text/markdown" : "text/csv";
     const url = URL.createObjectURL(new Blob([content], { type: mime })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `finora-report.${format === "markdown" ? "md" : format}`; anchor.click(); URL.revokeObjectURL(url); notify(`${format.toUpperCase()} report exported.`);
@@ -684,10 +712,10 @@ export default function Home() {
     finally { setSyncing(false); }
   }
 
-  async function performSheetAction(action: string, payload: Record<string, string> = {}): Promise<boolean> {
+  async function performSheetAction(action: string, payload: Record<string, unknown> = {}, scopedStatement?: StatementResult): Promise<boolean> {
     setSyncing(true);
     try {
-      const response = await fetch("/api/sheets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...payload }) });
+      const response = await fetch("/api/sheets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...payload, ...(scopedStatement ? { statement: scopedStatement } : {}) }) });
       const result = await response.json();
       if (!response.ok) {
         if (result.permissionRequired) {
@@ -700,16 +728,16 @@ export default function Home() {
       if (result.connection) setSheetConnection(result.connection);
       setSheetPermissionRequired(false);
       setSynced(true);
-      if (action === "share") notify(`Workbook shared with ${payload.email}.`);
+      if (action === "share") notify(`Workbook shared with ${String(payload.email || "the selected account")}.`);
       else if (action === "move") notify("Workbook moved to the selected Drive folder.");
       else if (action === "rename") notify("Workbook renamed.");
       else if (action === "copy") notify("A connected copy of your workbook was created.");
       else if (action === "connect") notify("Spreadsheet connected and updated with your Finora dashboard.");
-      else if (action === "addTab") notify(`Added the ${payload.name} tab.`);
-      else if (action === "deleteTab") notify(`Removed the ${payload.name} tab.`);
-      else if (action === "appendRows") notify(`Added rows to ${payload.tab}.`);
-      else if (action === "updateRange") notify(`Updated ${payload.range}.`);
-      else if (action === "clearRange") notify(`Cleared ${payload.range}.`);
+      else if (action === "addTab") notify(`Added the ${String(payload.name || "new")} tab.`);
+      else if (action === "deleteTab") notify(`Removed the ${String(payload.name || "selected")} tab.`);
+      else if (action === "appendRows") notify(`Added rows to ${String(payload.tab || "the sheet")}.`);
+      else if (action === "updateRange") notify(`Updated ${String(payload.range || "the selected range")}.`);
+      else if (action === "clearRange") notify(`Cleared ${String(payload.range || "the selected range")}.`);
       else notify("Transactions, summaries, subscriptions, and charts are live in Google Sheets.");
       return true;
     } catch (error) { notify(error instanceof Error ? error.message : "Google Sheets update failed.", "bad"); return false; }
@@ -754,10 +782,12 @@ export default function Home() {
       const key = transactionKey(transaction);
       if (!known.has(key)) { combinedTransactions.push(transaction); known.add(key); }
     }
-    const asksForCombinedData = /\b(combine|combined|both|everything|all (?:my )?data|saved ledger|imported data|existing data)\b/i.test(cleanPrompt);
-    const evidenceScope: ChatMessage["evidenceScope"] = attachmentTransactions.length ? (asksForCombinedData ? "combined" : "attachments") : "ledger";
-    const analysisTransactions = evidenceScope === "attachments" ? attachmentTransactions : combinedTransactions;
+    const asksForCombinedData = /\b(combine|combined|both|everything|all (?:my )?data)\b/i.test(cleanPrompt);
+    const asksForSavedData = /\b(saved|imported|existing)\s+(?:ledger|transactions?|data)\b|\bmy\s+(?:saved\s+)?ledger\b/i.test(cleanPrompt);
+    const evidenceScope: ChatMessage["evidenceScope"] = attachmentTransactions.length ? (asksForSavedData && !asksForCombinedData ? "ledger" : asksForCombinedData ? "combined" : "attachments") : "ledger";
+    const analysisTransactions = evidenceScope === "attachments" ? attachmentTransactions : evidenceScope === "combined" ? combinedTransactions : statement.transactions;
     const analysisBudgets = evidenceScope === "attachments" ? [] : budgets;
+    const scopedAttachmentMeta = evidenceScope === "ledger" ? [] : attachmentMeta;
     const history = chatMessages.slice(-10).map(({ role, content }) => ({ role, content }));
     const requestHistory = evidenceScope === "attachments" && newAttachmentMeta.length ? [] : history;
     const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: "user", content: cleanPrompt, ...(newAttachmentMeta.length ? { attachments: newAttachmentMeta } : {}) };
@@ -766,7 +796,7 @@ export default function Home() {
     const now = new Date().toISOString();
     const title = existing?.title || (cleanPrompt.length > 48 ? `${cleanPrompt.slice(0, 48).trim()}…` : cleanPrompt);
     const nextMessages = [...chatMessages, userMessage];
-    const pendingThread: ChatThread = { id, title, messages: nextMessages, createdAt: existing?.createdAt || now, updatedAt: now };
+    const pendingThread: ChatThread = { id, title, messages: nextMessages, attachmentContext: readyAttachments, createdAt: existing?.createdAt || now, updatedAt: now };
     setActiveChatId(id);
     setChatMessages(nextMessages);
     setChatThreads((current) => [pendingThread, ...current.filter((chat) => chat.id !== id)]);
@@ -777,7 +807,7 @@ export default function Home() {
     setChatAttachments([]);
     setQuestion("");
     try {
-      const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: cleanPrompt, history: requestHistory, transactions: analysisTransactions, budgets: analysisBudgets, attachments: attachmentMeta, dataScope: evidenceScope, sheetConnected: Boolean(sheetConnection) }) });
+      const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: cleanPrompt, history: requestHistory, transactions: analysisTransactions, budgets: analysisBudgets, attachments: scopedAttachmentMeta, dataScope: evidenceScope, sheetConnected: Boolean(sheetConnection) }) });
       const result = await response.json();
       if (!response.ok || result.error) throw new Error(result.error || "Question failed.");
       const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: result.answer, analysis: sanitizeAnalystResponse(result.analysis), actions: sanitizeAgentActions(result.actions), evidenceScope }], updatedAt: new Date().toISOString() };
@@ -786,7 +816,7 @@ export default function Home() {
       void persistChat(finalThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
     } catch {
       const analysis = buildAnalystResponse(cleanPrompt, analysisTransactions, analysisBudgets);
-      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: analystMarkdown(analysis), analysis, actions: fallbackAgentActions(cleanPrompt, attachmentMeta.length), evidenceScope }], updatedAt: new Date().toISOString() };
+      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: analystMarkdown(analysis), analysis, actions: fallbackAgentActions(cleanPrompt, scopedAttachmentMeta.length), evidenceScope }], updatedAt: new Date().toISOString() };
       setChatMessages(finalThread.messages);
       setChatThreads((current) => [finalThread, ...current.filter((chat) => chat.id !== id)]);
       void persistChat(finalThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
@@ -795,9 +825,20 @@ export default function Home() {
   }
 
   async function persistChat(chat: ChatThread) {
-    const response = await fetch("/api/chats", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: chat.id, title: chat.title, messages: chat.messages }) });
+    const response = await fetch("/api/chats", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: chat.id, title: chat.title, messages: chat.messages, attachmentContext: chat.attachmentContext || [] }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Could not save this chat.");
+  }
+
+  async function replaceAttachmentContext(nextContext: ChatAttachment[]) {
+    chatContextAttachmentsRef.current = nextContext;
+    setChatContextAttachments(nextContext);
+    if (!activeChatId) return;
+    const current = chatThreads.find((chat) => chat.id === activeChatId);
+    if (!current) return;
+    const next = { ...current, attachmentContext: nextContext, updatedAt: new Date().toISOString() };
+    setChatThreads((threads) => [next, ...threads.filter((chat) => chat.id !== next.id)]);
+    await persistChat(next);
   }
 
   function updateActionState(messageId: string, actionId: string, status: AgentAction["status"], result?: string, save = true) {
@@ -806,7 +847,7 @@ export default function Home() {
     if (!activeChatId) return;
     const current = chatThreads.find((chat) => chat.id === activeChatId);
     if (!current) return;
-    const next = { ...current, messages, updatedAt: new Date().toISOString() };
+    const next = { ...current, messages, attachmentContext: chatContextAttachmentsRef.current, updatedAt: new Date().toISOString() };
     setChatThreads((threads) => [next, ...threads.filter((chat) => chat.id !== next.id)]);
     if (save) void persistChat(next).catch((error) => notify(error instanceof Error ? error.message : "Could not save this action.", "bad"));
   }
@@ -818,6 +859,10 @@ export default function Home() {
     updateActionState(messageId, action.id, "running", "Working…", false);
     try {
       let result = "Completed.";
+      const sourceMessage = chatMessages.find((message) => message.id === messageId);
+      const actionScope = sourceMessage?.evidenceScope || "ledger";
+      const attachmentOnly = actionScope === "attachments";
+      const scopedStatement = actionScope === "ledger" ? undefined : statementFromAttachments(chatContextAttachmentsRef.current, actionScope === "combined" ? statement : undefined) || undefined;
       if (action.type === "import_attachments") {
         const incoming = [...chatContextAttachmentsRef.current, ...chatAttachmentsRef.current].filter((attachment) => attachment.status === "ready").flatMap((attachment) => attachment.statement?.transactions || []);
         if (!incoming.length) throw new Error("Attach at least one file with transactions first.");
@@ -831,25 +876,45 @@ export default function Home() {
         if (!action.payload.merchant || !action.payload.category) throw new Error("A merchant and valid category are required.");
         const needle = action.payload.merchant.toLowerCase();
         let changed = 0;
-        const nextStatement = { ...statement, transactions: statement.transactions.map((transaction) => `${transaction.merchant} ${transaction.description}`.toLowerCase().includes(needle) ? (changed += 1, { ...transaction, category: action.payload.category as Category, confidence: 1, explanation: "Updated through Ask Finora." }) : transaction) };
-        if (!changed) throw new Error(`No transactions matched ${action.payload.merchant}.`);
-        await persistLedger(nextStatement, budgets); setStatement(nextStatement); setSynced(false); result = `${changed} transaction${changed === 1 ? "" : "s"} recategorized.`;
+        if (attachmentOnly) {
+          const nextContext = chatContextAttachmentsRef.current.map((attachment) => attachment.statement ? { ...attachment, statement: { ...attachment.statement, transactions: attachment.statement.transactions.map((transaction) => `${transaction.merchant} ${transaction.description}`.toLowerCase().includes(needle) ? (changed += 1, { ...transaction, category: action.payload.category as Category, confidence: 1, explanation: "Updated through Ask Finora for this attached file." }) : transaction) } } : attachment);
+          if (!changed) throw new Error(`No attached-file transactions matched ${action.payload.merchant}.`);
+          await replaceAttachmentContext(nextContext); result = `${changed} attached-file transaction${changed === 1 ? "" : "s"} recategorized.`;
+        } else {
+          const nextStatement = { ...statement, transactions: statement.transactions.map((transaction) => `${transaction.merchant} ${transaction.description}`.toLowerCase().includes(needle) ? (changed += 1, { ...transaction, category: action.payload.category as Category, confidence: 1, explanation: "Updated through Ask Finora." }) : transaction) };
+          if (!changed) throw new Error(`No transactions matched ${action.payload.merchant}.`);
+          await persistLedger(nextStatement, budgets); setStatement(nextStatement); setSynced(false); result = `${changed} transaction${changed === 1 ? "" : "s"} recategorized.`;
+        }
       } else if (action.type === "delete_transactions") {
         if (!action.payload.merchant) throw new Error("A specific merchant or person is required before deleting transactions.");
         const needle = action.payload.merchant.toLowerCase();
-        const removed = statement.transactions.filter((transaction) => `${transaction.merchant} ${transaction.description}`.toLowerCase().includes(needle));
-        if (!removed.length) throw new Error(`No transactions matched ${action.payload.merchant}.`);
-        const nextStatement = { ...statement, transactions: statement.transactions.filter((transaction) => !`${transaction.merchant} ${transaction.description}`.toLowerCase().includes(needle)) };
-        await persistLedger(nextStatement, budgets); setStatement(nextStatement); setSynced(false); result = `${removed.length} matching transaction${removed.length === 1 ? "" : "s"} removed.`;
+        if (attachmentOnly) {
+          let removed = 0;
+          const nextContext = chatContextAttachmentsRef.current.map((attachment) => attachment.statement ? { ...attachment, statement: { ...attachment.statement, transactions: attachment.statement.transactions.filter((transaction) => { const match = `${transaction.merchant} ${transaction.description}`.toLowerCase().includes(needle); if (match) removed += 1; return !match; }) } } : attachment);
+          if (!removed) throw new Error(`No attached-file transactions matched ${action.payload.merchant}.`);
+          await replaceAttachmentContext(nextContext); result = `${removed} matching attached-file transaction${removed === 1 ? "" : "s"} removed.`;
+        } else {
+          const removed = statement.transactions.filter((transaction) => `${transaction.merchant} ${transaction.description}`.toLowerCase().includes(needle));
+          if (!removed.length) throw new Error(`No transactions matched ${action.payload.merchant}.`);
+          const nextStatement = { ...statement, transactions: statement.transactions.filter((transaction) => !`${transaction.merchant} ${transaction.description}`.toLowerCase().includes(needle)) };
+          await persistLedger(nextStatement, budgets); setStatement(nextStatement); setSynced(false); result = `${removed.length} matching transaction${removed.length === 1 ? "" : "s"} removed.`;
+        }
       } else if (action.type === "add_transaction") {
         if (!action.payload.merchant || !action.payload.amount || !action.payload.direction) throw new Error("Merchant, amount, and debit/credit direction are required.");
         const transaction: Transaction = { id: crypto.randomUUID(), date: action.payload.date || new Date().toISOString().slice(0, 10), merchant: action.payload.merchant, description: action.payload.description || "Added through Ask Finora", amount: action.payload.amount, type: action.payload.direction, category: (action.payload.category as Category) || "Miscellaneous", confidence: 1, source: "Ask Finora", explanation: "Added and confirmed by you through Ask Finora." };
-        const nextStatement = { ...statement, transactions: [transaction, ...statement.transactions] };
-        await persistLedger(nextStatement, budgets); setStatement(nextStatement); setSynced(false); result = `${transaction.merchant} ${money(transaction.amount)} added.`;
+        if (attachmentOnly) {
+          let added = false;
+          const nextContext = chatContextAttachmentsRef.current.map((attachment) => !added && attachment.statement ? (added = true, { ...attachment, transactionCount: attachment.transactionCount + 1, statement: { ...attachment.statement, transactions: [transaction, ...attachment.statement.transactions] } }) : attachment);
+          if (!added) throw new Error("This chat has no attached file to update.");
+          await replaceAttachmentContext(nextContext); result = `${transaction.merchant} ${money(transaction.amount)} added to the attached-file context.`;
+        } else {
+          const nextStatement = { ...statement, transactions: [transaction, ...statement.transactions] };
+          await persistLedger(nextStatement, budgets); setStatement(nextStatement); setSynced(false); result = `${transaction.merchant} ${money(transaction.amount)} added.`;
+        }
       } else if (action.type === "sync_sheet" || action.type === "create_sheet") {
-        const ok = await performSheetAction(action.type === "create_sheet" || !sheetConnection ? "create" : "sync", action.payload.name ? { name: action.payload.name } : {});
+        const ok = await performSheetAction(action.type === "create_sheet" || !sheetConnection ? "create" : "sync", action.payload.name ? { name: action.payload.name } : {}, scopedStatement);
         if (!ok) throw new Error("Finish Google authorization, then run this action again.");
-        result = sheetConnection ? "Google Sheets updated." : "Finora workbook created and connected.";
+        result = sheetConnection ? `${scopedStatement ? "Attached-file" : "Saved-ledger"} data synced to Google Sheets.` : "Finora workbook created and connected.";
       } else if (action.type === "rename_sheet" || action.type === "copy_sheet" || action.type === "share_sheet" || action.type === "add_sheet_tab" || action.type === "delete_sheet_tab" || action.type === "append_sheet_rows" || action.type === "update_sheet_range" || action.type === "clear_sheet_range") {
         const request = action.type === "rename_sheet" ? ["rename", { name: action.payload.name }] : action.type === "copy_sheet" ? ["copy", { name: action.payload.name }] : action.type === "share_sheet" ? ["share", { email: action.payload.email }] : action.type === "add_sheet_tab" ? ["addTab", { name: action.payload.name || action.payload.tab }] : action.type === "delete_sheet_tab" ? ["deleteTab", { name: action.payload.name || action.payload.tab }] : action.type === "append_sheet_rows" ? ["appendRows", { tab: action.payload.tab, valuesJson: action.payload.valuesJson }] : action.type === "update_sheet_range" ? ["updateRange", { range: action.payload.range, valuesJson: action.payload.valuesJson }] : ["clearRange", { range: action.payload.range }];
         const ok = await performSheetAction(request[0] as string, request[1] as Record<string, string>);
@@ -865,7 +930,7 @@ export default function Home() {
         await persistLedger(statement, nextBudgets); setBudgets(nextBudgets); result = `${action.payload.category} budget removed.`;
       } else if (action.type === "export_report") {
         const format = ["csv", "xlsx", "json", "markdown"].includes(action.payload.name.toLowerCase()) ? action.payload.name.toLowerCase() as "csv" | "xlsx" | "json" | "markdown" : "xlsx";
-        await exportData(format); result = `${format === "xlsx" ? "Excel" : format.toUpperCase()} export downloaded.`;
+        await exportData(format, scopedStatement || statement); result = `${format === "xlsx" ? "Excel" : format.toUpperCase()} export downloaded.`;
       } else if (action.type === "open_reports") {
         setView("reports"); result = "AI Reports opened.";
       } else if (action.type === "schedule_report") {
@@ -883,7 +948,7 @@ export default function Home() {
     if (!activeChatId && chatMessages.length) {
       const firstQuestion = chatMessages.find((message) => message.role === "user")?.content || "Finora conversation";
       const now = new Date().toISOString();
-      const chat: ChatThread = { id: crypto.randomUUID(), title: firstQuestion.length > 48 ? `${firstQuestion.slice(0, 48).trim()}…` : firstQuestion, messages: chatMessages, createdAt: now, updatedAt: now };
+      const chat: ChatThread = { id: crypto.randomUUID(), title: firstQuestion.length > 48 ? `${firstQuestion.slice(0, 48).trim()}…` : firstQuestion, messages: chatMessages, attachmentContext: chatContextAttachmentsRef.current, createdAt: now, updatedAt: now };
       setChatThreads((current) => [chat, ...current]);
       void persistChat(chat).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
     }
@@ -899,7 +964,8 @@ export default function Home() {
     setActiveChatId(chat.id);
     setChatMessages(chat.messages);
     chatAttachmentsRef.current = []; setChatAttachments([]);
-    chatContextAttachmentsRef.current = []; setChatContextAttachments([]);
+    const context = chat.attachmentContext || [];
+    chatContextAttachmentsRef.current = context; setChatContextAttachments(context);
     setQuestion("");
   }
 
@@ -911,7 +977,8 @@ export default function Home() {
       setActiveChatId(remaining[0]?.id || null);
       setChatMessages(remaining[0]?.messages || []);
       chatAttachmentsRef.current = []; setChatAttachments([]);
-      chatContextAttachmentsRef.current = []; setChatContextAttachments([]);
+      const context = remaining[0]?.attachmentContext || [];
+      chatContextAttachmentsRef.current = context; setChatContextAttachments(context);
     }
     try {
       const response = await fetch(`/api/chats?id=${encodeURIComponent(chat.id)}`, { method: "DELETE" });
