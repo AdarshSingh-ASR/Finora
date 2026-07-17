@@ -45,6 +45,8 @@ test("build contains the Finora product experience", async () => {
   assert.match(agentRoute, /add_transaction/); assert.match(agentRoute, /delete_transactions/); assert.match(agentRoute, /monthly_report/); assert.match(agentRoute, /report_settings_clear/);
   assert.match(agentRoute, /sync_statement/); assert.match(agentRoute, /analyze_finances/); assert.match(agentRoute, /financial_timeline/); assert.match(intelligence, /buildFinanceGraph/); assert.match(sheetLibrary, /Financial Timeline/); assert.match(sheetLibrary, /Forecast & Savings/);
   assert.match(statementParser, /CHUNK_SIZE = 60/); assert.match(statementParser, /generateAdaptiveStatementRange/); assert.match(statementParser, /transactions \$\{start\} through \$\{end\}/);
+  assert.match(statementParser, /MAX_CONCURRENT_CHUNKS/); assert.match(statementParser, /extractFromTextPages/); assert.match(statementParser, /mapWithConcurrency/); assert.match(statementParser, /parseSimpleTextLayerLocally/);
+  assert.match(dashboard, /extractPdfText/); assert.match(dashboard, /extractionMode: "text-layer"/); assert.match(dashboard, /Preparing scanned pages/);
   assert.match(analyst, /Savings and cash flow/); assert.match(analyst, /Merchant breakdown/); assert.doesNotMatch(analyst, /\(isReport \|\| isComparison \? \{ forecast:/);
   assert.match(analyst, /Transaction count/); assert.match(analyst, /asksForSimpleOutflow/); assert.match(dashboard, /hasRichAnalystModules/);
   assert.doesNotMatch(dashboard, /Finding transactions with/);

@@ -3,6 +3,9 @@
   "name": "finora",
   "main": "worker/index.ts",
   "compatibility_date": "2026-05-22",
+  "vars": {
+    "MAX_CONCURRENT_CHUNKS": "3"
+  },
   "d1_databases": [
     {
       "binding": "DB",

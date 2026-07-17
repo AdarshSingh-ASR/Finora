@@ -79,7 +79,7 @@ export async function POST(request: Request) {
       return Response.json({ connected: true, transactionCount: transactions.length, periods: monthlySummaries(transactions).map((item) => item.period), sheet, reportPreference: preference });
     }
     if (action === "import_statement") {
-      const parsed = await processStatementInput({ filename: String(body.filename || "statement"), mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined, fileData: typeof body.fileData === "string" ? body.fileData : undefined, text: typeof body.text === "string" ? body.text : undefined });
+      const parsed = await processStatementInput({ filename: String(body.filename || "statement"), mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined, fileData: typeof body.fileData === "string" ? body.fileData : undefined, text: typeof body.text === "string" ? body.text : undefined, extractedPages: Array.isArray(body.extractedPages) ? body.extractedPages : undefined, extractionMode: body.extractionMode === "text-layer" || body.extractionMode === "multimodal" || body.extractionMode === "deterministic" ? body.extractionMode : undefined });
       const replace = body.replace === true;
       const mergedTransactions = !replace && statement ? [...statement.transactions, ...parsed.transactions].filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id || (candidate.date === item.date && candidate.amount === item.amount && candidate.description === item.description)) === index) : parsed.transactions;
       const saved = { ...parsed, transactions: mergedTransactions, provider: undefined, model: undefined } as StatementResult;
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
       return Response.json({ imported: parsed.transactions.length, totalTransactions: saved.transactions.length, statement: saved });
     }
     if (action === "sync_statement") {
-      const parsed = await processStatementInput({ filename: String(body.filename || "statement"), mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined, fileData: typeof body.fileData === "string" ? body.fileData : undefined, text: typeof body.text === "string" ? body.text : undefined });
+      const parsed = await processStatementInput({ filename: String(body.filename || "statement"), mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined, fileData: typeof body.fileData === "string" ? body.fileData : undefined, text: typeof body.text === "string" ? body.text : undefined, extractedPages: Array.isArray(body.extractedPages) ? body.extractedPages : undefined, extractionMode: body.extractionMode === "text-layer" || body.extractionMode === "multimodal" || body.extractionMode === "deterministic" ? body.extractionMode : undefined });
       const replace = body.replace === true;
       const mergedTransactions = !replace && statement ? [...statement.transactions, ...parsed.transactions].filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id || (candidate.date === item.date && candidate.amount === item.amount && candidate.description === item.description)) === index) : parsed.transactions;
       const saved = { ...parsed, transactions: mergedTransactions, provider: undefined, model: undefined } as StatementResult;

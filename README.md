@@ -265,6 +265,8 @@ CRON_SECRET=generate-another-long-random-secret
 
 Optional statement-intelligence configuration is documented in [`.env.example`](./.env.example). Without it, judges can still test the deterministic CSV parser using [`samples/upi-statement.csv`](./samples/upi-statement.csv).
 
+Text-native PDFs are extracted once in the browser and analyzed in independent sections. Set `MAX_CONCURRENT_CHUNKS=3` to tune the bounded parallelism for your provider; accepted values are `1` through `8`.
+
 Generate secure local secrets with:
 
 ```bash

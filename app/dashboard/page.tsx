@@ -24,6 +24,8 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { NumberTicker } from "../../components/magicui/number-ticker";
 import { BorderBeam } from "../../components/magicui/border-beam";
 import { fallbackAgentActions, sanitizeAgentActions, type AgentAction, type ChatAttachmentMeta } from "../../lib/agent-actions";
+import { extractPdfText } from "../../lib/pdf-text-extractor";
+import type { ExtractedPdfPage, StatementExtractionMode } from "../../lib/statement-extraction";
 
 type View = "overview" | "transactions" | "reports" | "agent";
 type Toast = { tone: "good" | "bad"; message: string } | null;
@@ -34,6 +36,43 @@ type SheetConnection = { spreadsheetId: string; spreadsheetUrl: string; name: st
 type SheetFile = { id: string; name: string; webViewLink?: string; modifiedTime?: string; parents?: string[] };
 
 const emptyStatement: StatementResult = { accountName: "", bankName: "", period: "", currency: "INR", transactions: [], insights: [] };
+
+type PreparedStatementPayload = { filename: string; mimeType: string; text?: string; fileData?: string; extractedPages?: ExtractedPdfPage[]; extractionMode: StatementExtractionMode };
+
+async function fileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || new Error(`Could not read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function prepareStatementPayload(file: File, onProgress?: (label: string) => void): Promise<PreparedStatementPayload> {
+  const lower = file.name.toLowerCase();
+  const base = { filename: file.name, mimeType: file.type || (lower.endsWith(".pdf") ? "application/pdf" : "application/octet-stream") };
+  if (lower.endsWith(".csv") || lower.endsWith(".txt") || lower.endsWith(".tsv")) return { ...base, text: await file.text(), extractionMode: "deterministic" };
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+    onProgress?.("Normalizing spreadsheet…");
+    const XLSX = await import("xlsx");
+    const book = XLSX.read(await file.arrayBuffer());
+    const text = book.SheetNames.map((name) => `--- Sheet: ${name} ---\n${XLSX.utils.sheet_to_csv(book.Sheets[name])}`).join("\n\n");
+    return { ...base, text, extractionMode: "deterministic" };
+  }
+  if (lower.endsWith(".pdf") || file.type === "application/pdf") {
+    try {
+      const extracted = await extractPdfText(file, onProgress);
+      if (extracted.mode === "text-layer" && extracted.pages.length) {
+        onProgress?.("Preparing statement sections…");
+        return { ...base, extractedPages: extracted.pages, extractionMode: "text-layer" };
+      }
+    } catch {
+      // Missing, encrypted, and image-only text layers use the multimodal reader.
+    }
+  }
+  onProgress?.("Preparing scanned pages…");
+  return { ...base, fileData: await fileAsDataUrl(file), extractionMode: "multimodal" };
+}
 
 function statementFromAttachments(attachments: ChatAttachment[], base?: StatementResult): StatementResult | null {
   const ready = attachments.filter((attachment) => attachment.status === "ready" && attachment.statement);
@@ -617,22 +656,9 @@ export default function Home() {
 
   async function parseFinancialFile(file: File, onProgress?: (label: string) => void): Promise<StatementResult> {
     if (file.size > 18 * 1024 * 1024) throw new Error(`${file.name} is larger than 18 MB.`);
-    let text: string | undefined;
-    let fileData: string | undefined;
-    const lower = file.name.toLowerCase();
-    if (lower.endsWith(".csv") || lower.endsWith(".txt") || lower.endsWith(".tsv")) text = await file.text();
-    else if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-      onProgress?.("Normalizing spreadsheet…");
-      const XLSX = await import("xlsx");
-      const book = XLSX.read(await file.arrayBuffer());
-      text = book.SheetNames.map((name) => `--- Sheet: ${name} ---\n${XLSX.utils.sheet_to_csv(book.Sheets[name])}`).join("\n\n");
-    } else {
-      fileData = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file);
-      });
-    }
+    const payload = await prepareStatementPayload(file, onProgress);
     onProgress?.("Finding transactions…");
-    const response = await fetch("/api/categorize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, mimeType: file.type, fileData, text }) });
+    const response = await fetch("/api/categorize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const result = await response.json();
     if (!response.ok || result.error) throw new Error(result.error || `Could not read ${file.name}.`);
     return result as StatementResult;
@@ -672,25 +698,11 @@ export default function Home() {
     setUploading(true);
     setUploadLabel("Reading every page…");
     try {
-      let text: string | undefined;
-      let fileData: string | undefined;
-      const lower = file.name.toLowerCase();
-      if (lower.endsWith(".csv") || lower.endsWith(".txt") || lower.endsWith(".tsv")) {
-        text = await file.text();
-      } else if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-        setUploadLabel("Normalizing spreadsheet…");
-        const XLSX = await import("xlsx");
-        const book = XLSX.read(await file.arrayBuffer());
-        text = XLSX.utils.sheet_to_csv(book.Sheets[book.SheetNames[0]]);
-      } else {
-        fileData = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file);
-        });
-      }
+      const payload = await prepareStatementPayload(file, setUploadLabel);
       setUploadLabel("Finding transactions…");
       const response = await fetch("/api/categorize", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, mimeType: file.type, fileData, text }),
+        body: JSON.stringify(payload),
       });
       const result = await response.json();
       if (!response.ok || result.error) throw new Error(result.error || "Statement analysis failed.");
