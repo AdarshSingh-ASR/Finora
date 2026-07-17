@@ -27,3 +27,23 @@ test("uses Groq GPT-OSS as the text fallback with strict JSON schema", async () 
     if (originalGroq == null) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = originalGroq;
   }
 });
+
+test("rejects malformed structured fallback responses", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalVertex = process.env.GOOGLE_VERTEX_CREDENTIALS;
+  const originalGroq = process.env.GROQ_API_KEY;
+  delete process.env.GOOGLE_VERTEX_CREDENTIALS;
+  process.env.GROQ_API_KEY = "test-key";
+  globalThis.fetch = async () => Response.json({ choices: [{ message: { content: '{"transactions":[{"merchant":"unfinished' } }] });
+  try {
+    const schema = { type: "object", properties: { transactions: { type: "array" } } };
+    await assert.rejects(
+      generateWithFallback({ system: "Return JSON.", prompt: "Test", schema }),
+      /incomplete structured data/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalVertex == null) delete process.env.GOOGLE_VERTEX_CREDENTIALS; else process.env.GOOGLE_VERTEX_CREDENTIALS = originalVertex;
+    if (originalGroq == null) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = originalGroq;
+  }
+});
