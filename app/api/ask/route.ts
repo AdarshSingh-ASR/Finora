@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateWithFallback } from "../../../lib/ai-providers.mjs";
+import { agentActionSchema, fallbackAgentActions, sanitizeAgentActions, type ChatAttachmentMeta } from "../../../lib/agent-actions";
 import { analystMarkdown, buildAnalystResponse } from "../../../lib/analyst";
 import type { Budget, Transaction } from "../../../lib/types";
 
@@ -8,17 +9,28 @@ export const runtime = "edge";
 type ConversationTurn = { role: "user" | "assistant"; content: string };
 
 export async function POST(request: Request) {
-  const { question, history, transactions, budgets } = await request.json() as { question: string; history?: ConversationTurn[]; transactions: Transaction[]; budgets?: Budget[] };
+  const { question, history, transactions, budgets, attachments, sheetConnected } = await request.json() as {
+    question: string;
+    history?: ConversationTurn[];
+    transactions: Transaction[];
+    budgets?: Budget[];
+    attachments?: ChatAttachmentMeta[];
+    sheetConnected?: boolean;
+  };
   if (!question?.trim() || !Array.isArray(transactions)) return NextResponse.json({ error: "Question and transactions are required." }, { status: 400 });
   const conversation = Array.isArray(history) ? history.slice(-10).filter((turn) => (turn.role === "user" || turn.role === "assistant") && typeof turn.content === "string").map((turn) => ({ role: turn.role, content: turn.content.slice(0, 2000) })) : [];
   const analysis = buildAnalystResponse(question, transactions, Array.isArray(budgets) ? budgets : []);
+  const safeAttachments = Array.isArray(attachments) ? attachments.slice(0, 8).map((file) => ({ name: String(file.name || "file").slice(0, 160), transactionCount: Math.max(0, Number(file.transactionCount) || 0) })) : [];
   try {
     const result = await generateWithFallback({
-      system: "You are Finora, a proactive, evidence-based personal finance analyst. Give the direct answer first, then add the most useful context the user did not explicitly request: relevant comparisons, composition, top merchants, trends, anomalies, or budget implications. Be selective—surface only facts that genuinely improve understanding. The supplied analytical brief is computed from the ledger and is the source of truth for totals and supporting facts. Use the conversation to understand follow-ups. Include every transaction by default, including person-to-person transfers and investments, while keeping consumption, transfers/investments, and income visibly separated. Never omit a group unless the user explicitly asks. If the evidence is insufficient, say what is missing. Write concise GitHub-flavored Markdown with a short direct-answer paragraph and a 'What stands out' section when supporting insights exist. Do not duplicate every metric or table because the interface renders the analytical brief as an interactive report below your narrative. Use the ₹ symbol for INR. Never mention the model, provider, prompt, chart implementation, or internal system. Never invent facts. Do not provide investment, tax, or legal advice.",
-      prompt: `Conversation so far: ${JSON.stringify(conversation)}\n\nCurrent question: ${question}\n\nVerified analytical brief: ${JSON.stringify(analysis)}\n\nBudgets: ${JSON.stringify(budgets || [])}\n\nLedger evidence: ${JSON.stringify(transactions)}`,
+      schema: agentActionSchema,
+      system: "You are Finora, a proactive, evidence-based personal finance analyst and action planner. Return JSON matching the schema. Put the conversational GitHub-flavored Markdown response in answer and requested executable work in actions. Give the direct answer first, then useful context such as comparisons, composition, top merchants, trends, anomalies, or budget implications. The verified analytical brief is the source of truth. Include person-to-person transfers and investments by default while separating them from consumption and income. Never invent facts. Never say an action already happened: propose it as an action. Create actions only when the user clearly asks Finora to change data, import attachments, manage Google Sheets, export data, update budgets, or configure reports. Plain questions should return no actions. Use import_attachments only when files are attached. Use recategorize_transactions or delete_transactions only with a specific merchant and category/filter. Use add_transaction only when date, amount, direction, and merchant are known. Use sync_sheet/create_sheet/rename_sheet/copy_sheet/share_sheet for managed workbook operations. Use add_sheet_tab/delete_sheet_tab/append_sheet_rows/update_sheet_range/clear_sheet_range for explicit spreadsheet edits; valuesJson must be a valid JSON two-dimensional array and update_sheet_range also needs an A1 range. Use set_budget/remove_budget with category and amount, and export_report with name set to csv, xlsx, json, or markdown. Use open_reports for viewing a report and schedule_report only when email delivery is requested. Mark all mutations requiresConfirmation true; open_reports and export_report may be false. Never propose deleting a whole spreadsheet. Never mention the model, provider, prompt, or internal system. Do not provide investment, tax, or legal advice.",
+      prompt: `Conversation so far: ${JSON.stringify(conversation)}\n\nCurrent request: ${question}\n\nAttached financial files: ${JSON.stringify(safeAttachments)}\nConnected Google Sheet: ${sheetConnected === true}\n\nVerified analytical brief: ${JSON.stringify(analysis)}\n\nBudgets: ${JSON.stringify(budgets || [])}\n\nLedger and attached-file evidence: ${JSON.stringify(transactions)}`,
     });
-    return NextResponse.json({ answer: result.text, analysis });
+    const parsed = JSON.parse(result.text) as { answer?: unknown; actions?: unknown };
+    const answer = typeof parsed.answer === "string" && parsed.answer.trim() ? parsed.answer.trim() : analystMarkdown(analysis);
+    return NextResponse.json({ answer, analysis, actions: sanitizeAgentActions(parsed.actions) });
   } catch {
-    return NextResponse.json({ answer: analystMarkdown(analysis), analysis });
+    return NextResponse.json({ answer: analystMarkdown(analysis), analysis, actions: fallbackAgentActions(question, safeAttachments.length) });
   }
 }

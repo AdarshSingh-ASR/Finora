@@ -12,6 +12,7 @@ import {
   ReceiptIndianRupee, Repeat2, Search, ShieldCheck, Sparkles, UploadCloud,
   X, Zap, LogOut, Mail, UserRound, Plus, Trash2, Database, ArrowRight, MessageSquare,
   Files, Folder, Pencil, RefreshCw, Share2, Unlink,
+  Paperclip, Play, FileCheck2,
 } from "lucide-react";
 import { budgetStatus, categories, compareMonths, detectAnomalies, detectSubscriptions, financialHealthScore, findDuplicateTransactions, inPeriod, latestPeriod, money, summarize, weeklyReport } from "../../lib/finance";
 import { analystMarkdown, buildAnalystResponse, chartColors, sanitizeAnalystResponse, type AnalystChart, type AnalystResponse } from "../../lib/analyst";
@@ -22,11 +23,13 @@ import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { NumberTicker } from "../../components/magicui/number-ticker";
 import { BorderBeam } from "../../components/magicui/border-beam";
+import { fallbackAgentActions, sanitizeAgentActions, type AgentAction, type ChatAttachmentMeta } from "../../lib/agent-actions";
 
 type View = "overview" | "transactions" | "reports" | "agent";
 type Toast = { tone: "good" | "bad"; message: string } | null;
-type ChatMessage = { id: string; role: "user" | "assistant"; content: string; analysis?: AnalystResponse };
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string; analysis?: AnalystResponse; actions?: AgentAction[]; attachments?: ChatAttachmentMeta[] };
 type ChatThread = { id: string; title: string; messages: ChatMessage[]; createdAt: string; updatedAt: string };
+type ChatAttachment = ChatAttachmentMeta & { mimeType: string; status: "reading" | "ready" | "error"; statement?: StatementResult; error?: string };
 type SheetConnection = { spreadsheetId: string; spreadsheetUrl: string; name: string; folderId?: string | null; lastSyncedAt: string; stale?: boolean };
 type SheetFile = { id: string; name: string; webViewLink?: string; modifiedTime?: string; parents?: string[] };
 
@@ -130,17 +133,25 @@ const financePrompts = [
   "Compare this month with the previous month",
 ];
 
-function ChatWorkspace({ messages, question, asking, transactionCount, userName, onQuestion, onAsk, endRef }: {
+function ChatWorkspace({ messages, question, asking, transactionCount, attachments, attachmentBusy, runningActionId, onQuestion, onAsk, onAttach, onRemoveAttachment, onRunAction, endRef }: {
   messages: ChatMessage[];
   question: string;
   asking: boolean;
   transactionCount: number;
-  userName: string;
+  attachments: ChatAttachment[];
+  attachmentBusy: boolean;
+  runningActionId: string | null;
   onQuestion: (value: string) => void;
   onAsk: (prompt?: string) => void;
+  onAttach: (files: FileList) => void;
+  onRemoveAttachment: (id: string) => void;
+  onRunAction: (messageId: string, action: AgentAction) => void;
   endRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const attachmentRef = useRef<HTMLInputElement>(null);
+  const readyAttachments = attachments.filter((attachment) => attachment.status === "ready");
+  const attachedTransactionCount = readyAttachments.reduce((total, attachment) => total + attachment.transactionCount, 0);
 
   async function copyReply(message: ChatMessage) {
     await navigator.clipboard.writeText(message.content);
@@ -155,8 +166,8 @@ function ChatWorkspace({ messages, question, asking, transactionCount, userName,
           {messages.length === 0 && <div className="finora-chat-welcome">
             <span><Sparkles size={22}/></span>
             <p className="eyebrow">YOUR FINANCIAL COPILOT</p>
-            <h1>What would you like<br/>to know, {userName.split(" ")[0]}?</h1>
-            <p>Ask naturally. Finora can follow context, compare periods, inspect merchants, and explain every answer from your imported ledger.</p>
+            <h1>Ask, analyze,<br/>or get it done.</h1>
+            <p>Attach statements, receipts, or spreadsheets. Finora can answer from them, add transactions to your ledger, update Google Sheets, and prepare reports.</p>
             <div className="finora-chat-suggestions">{financePrompts.map((prompt) => <button key={prompt} onClick={() => onAsk(prompt)}>{prompt}<ArrowUpRight size={15}/></button>)}</div>
           </div>}
 
@@ -164,7 +175,15 @@ function ChatWorkspace({ messages, question, asking, transactionCount, userName,
             <div className="finora-chat-avatar">{message.role === "assistant" ? <Mark/> : <UserRound size={16}/>}</div>
             <div>
               <span>{message.role === "assistant" ? "Finora" : "You"}</span>
-              {message.role === "assistant" ? <><div className="finora-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>{message.analysis && <AnalystReport analysis={message.analysis} onAsk={onAsk}/>}</> : <p>{message.content}</p>}
+              {message.role === "assistant" ? <><div className="finora-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>{message.analysis && <AnalystReport analysis={message.analysis} onAsk={onAsk}/>}</> : <><p>{message.content}</p>{message.attachments?.length ? <div className="finora-message-files">{message.attachments.map((file) => <span key={file.id}><FileCheck2 size={13}/><b>{file.name}</b><small>{file.transactionCount} found</small></span>)}</div> : null}</>}
+              {message.role === "assistant" && message.actions?.length ? <section className="finora-agent-actions" aria-label="Finora actions">
+                <header><span><Zap size={13}/>READY TO DO</span><small>Nothing runs until you approve it.</small></header>
+                <div>{message.actions.map((action) => <article className={action.status} key={action.id}>
+                  <span className="finora-action-icon">{action.status === "completed" ? <Check size={15}/> : action.status === "running" ? <LoaderCircle className="spin" size={15}/> : <Play size={15}/>}</span>
+                  <div><strong>{action.label}</strong><p>{action.description}</p>{action.result && <small>{action.result}</small>}</div>
+                  <button type="button" disabled={action.status === "completed" || runningActionId === action.id} onClick={() => onRunAction(message.id, action)}>{action.status === "completed" ? "Done" : action.requiresConfirmation ? "Review & run" : "Run"}</button>
+                </article>)}</div>
+              </section> : null}
               {message.role === "assistant" && <div className="finora-message-actions">
                 <small><ShieldCheck size={11}/>Based on your ledger</small>
                 <button type="button" onClick={() => void copyReply(message)} aria-label={copiedId === message.id ? "Reply copied" : "Copy reply"} title={copiedId === message.id ? "Copied" : "Copy reply"}>
@@ -180,8 +199,10 @@ function ChatWorkspace({ messages, question, asking, transactionCount, userName,
 
         <div className="finora-chat-composer-wrap">
           <form className="finora-chat-composer" onSubmit={(event) => { event.preventDefault(); onAsk(); }}>
+            {attachments.length > 0 && <div className="finora-attachment-strip">{attachments.map((attachment) => <span className={attachment.status} key={attachment.id}><FileText size={13}/><b>{attachment.name}</b><small>{attachment.status === "reading" ? "Reading…" : attachment.status === "error" ? attachment.error : `${attachment.transactionCount} transactions`}</small><button type="button" onClick={() => onRemoveAttachment(attachment.id)} aria-label={`Remove ${attachment.name}`}><X size={12}/></button></span>)}</div>}
             <textarea rows={1} value={question} onChange={(event) => onQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onAsk(); } }} placeholder="Ask anything about your money…" aria-label="Message Finora"/>
-            <div><span><Database size={12}/>{transactionCount} transactions in context</span><button type="submit" disabled={!question.trim() || asking} aria-label="Send message"><ArrowUpRight size={18}/></button></div>
+            <div className="finora-composer-foot"><span><Database size={12}/>{transactionCount} saved{attachedTransactionCount ? ` · ${attachedTransactionCount} attached` : ""}</span><div className="finora-composer-buttons"><button type="button" className="attach" onClick={() => attachmentRef.current?.click()} disabled={attachmentBusy || attachments.length >= 8} aria-label="Attach financial files" title="Attach financial files"><Paperclip size={17}/></button><button type="submit" disabled={!question.trim() || asking || attachments.some((attachment) => attachment.status === "reading")} aria-label="Send message"><ArrowUpRight size={18}/></button></div></div>
+            <input ref={attachmentRef} type="file" multiple hidden accept=".pdf,.csv,.tsv,.txt,.xlsx,.xls,image/png,image/jpeg" onChange={(event) => { if (event.target.files?.length) onAttach(event.target.files); event.target.value = ""; }}/>
           </form>
           <small>Finora answers from your imported ledger. Verify important financial decisions.</small>
         </div>
@@ -327,6 +348,9 @@ export default function Home() {
   const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([]);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [runningActionId, setRunningActionId] = useState<string | null>(null);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [newBudgetCategory, setNewBudgetCategory] = useState<Category>("Food & Dining");
   const [newBudgetLimit, setNewBudgetLimit] = useState("");
@@ -520,6 +544,49 @@ export default function Home() {
     void persistLedger(statement, next).catch((error) => notify(error.message, "bad"));
   }
 
+  async function parseFinancialFile(file: File, onProgress?: (label: string) => void): Promise<StatementResult> {
+    if (file.size > 18 * 1024 * 1024) throw new Error(`${file.name} is larger than 18 MB.`);
+    let text: string | undefined;
+    let fileData: string | undefined;
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith(".csv") || lower.endsWith(".txt") || lower.endsWith(".tsv")) text = await file.text();
+    else if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+      onProgress?.("Normalizing spreadsheet…");
+      const XLSX = await import("xlsx");
+      const book = XLSX.read(await file.arrayBuffer());
+      text = XLSX.utils.sheet_to_csv(book.Sheets[book.SheetNames[0]]);
+    } else {
+      fileData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file);
+      });
+    }
+    onProgress?.("Finding transactions…");
+    const response = await fetch("/api/categorize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, mimeType: file.type, fileData, text }) });
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(result.error || `Could not read ${file.name}.`);
+    return result as StatementResult;
+  }
+
+  async function handleChatFiles(fileList: FileList) {
+    if (!session?.user) return notify("Sign in before attaching financial data.", "bad");
+    const files = Array.from(fileList).slice(0, Math.max(0, 8 - chatAttachments.length));
+    if (!files.length) return notify("You can attach up to 8 files per chat.", "bad");
+    const pending = files.map<ChatAttachment>((file) => ({ id: crypto.randomUUID(), name: file.name, size: file.size, mimeType: file.type, transactionCount: 0, status: "reading" }));
+    setChatAttachments((current) => [...current, ...pending]);
+    setAttachmentBusy(true);
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index], id = pending[index].id;
+      try {
+        const parsed = await parseFinancialFile(file);
+        setChatAttachments((current) => current.map((attachment) => attachment.id === id ? { ...attachment, status: "ready", transactionCount: parsed.transactions.length, statement: parsed } : attachment));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : `Could not read ${file.name}.`;
+        setChatAttachments((current) => current.map((attachment) => attachment.id === id ? { ...attachment, status: "error", error: message } : attachment));
+      }
+    }
+    setAttachmentBusy(false);
+  }
+
   async function handleFile(file?: File, append = false) {
     if (!file) return;
     if (!session?.user) return notify("Sign in before importing financial data.", "bad");
@@ -554,7 +621,7 @@ export default function Home() {
       setStatement(nextStatement);
       setSynced(false);
       setView("overview");
-      notify(`${result.transactions.length} real transaction${result.transactions.length === 1 ? "" : "s"} imported ${result.provider === "local" ? "with local parsing" : `and categorized by ${result.provider === "groq" ? "Groq" : "Gemini"}`}.`);
+      notify(`${result.transactions.length} real transaction${result.transactions.length === 1 ? "" : "s"} imported and categorized.`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "We couldn't read that statement.", "bad");
     } finally { setUploading(false); }
@@ -603,7 +670,7 @@ export default function Home() {
     finally { setSyncing(false); }
   }
 
-  async function performSheetAction(action: string, payload: Record<string, string> = {}) {
+  async function performSheetAction(action: string, payload: Record<string, string> = {}): Promise<boolean> {
     setSyncing(true);
     try {
       const response = await fetch("/api/sheets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...payload }) });
@@ -612,7 +679,7 @@ export default function Home() {
         if (result.permissionRequired) {
           setSheetPermissionRequired(true);
           await authorizeSheets(action === "sync" ? "sync" : "create");
-          return;
+          return false;
         }
         throw new Error(result.error || "Google Sheets update failed.");
       }
@@ -624,8 +691,14 @@ export default function Home() {
       else if (action === "rename") notify("Workbook renamed.");
       else if (action === "copy") notify("A connected copy of your workbook was created.");
       else if (action === "connect") notify("Spreadsheet connected and updated with your Finora dashboard.");
+      else if (action === "addTab") notify(`Added the ${payload.name} tab.`);
+      else if (action === "deleteTab") notify(`Removed the ${payload.name} tab.`);
+      else if (action === "appendRows") notify(`Added rows to ${payload.tab}.`);
+      else if (action === "updateRange") notify(`Updated ${payload.range}.`);
+      else if (action === "clearRange") notify(`Cleared ${payload.range}.`);
       else notify("Transactions, summaries, subscriptions, and charts are live in Google Sheets.");
-    } catch (error) { notify(error instanceof Error ? error.message : "Google Sheets update failed.", "bad"); }
+      return true;
+    } catch (error) { notify(error instanceof Error ? error.message : "Google Sheets update failed.", "bad"); return false; }
     finally { setSyncing(false); }
   }
 
@@ -646,8 +719,17 @@ export default function Home() {
   async function askAgent(prompt = question) {
     const cleanPrompt = prompt.trim();
     if (!cleanPrompt || asking) return;
+    const readyAttachments = chatAttachments.filter((attachment) => attachment.status === "ready" && attachment.statement);
+    const attachmentMeta = readyAttachments.map<ChatAttachmentMeta>(({ id, name, size, transactionCount }) => ({ id, name, size, transactionCount }));
+    const transactionKey = (transaction: Transaction) => `${transaction.date}|${transaction.merchant.toLowerCase()}|${transaction.type}|${transaction.amount}`;
+    const combinedTransactions = [...statement.transactions];
+    const known = new Set(combinedTransactions.map(transactionKey));
+    for (const transaction of readyAttachments.flatMap((attachment) => attachment.statement?.transactions || [])) {
+      const key = transactionKey(transaction);
+      if (!known.has(key)) { combinedTransactions.push(transaction); known.add(key); }
+    }
     const history = chatMessages.slice(-10).map(({ role, content }) => ({ role, content }));
-    const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: "user", content: cleanPrompt };
+    const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: "user", content: cleanPrompt, ...(attachmentMeta.length ? { attachments: attachmentMeta } : {}) };
     const id = activeChatId || crypto.randomUUID();
     const existing = chatThreads.find((chat) => chat.id === id);
     const now = new Date().toISOString();
@@ -661,16 +743,16 @@ export default function Home() {
     setQuestion("");
     setAsking(true);
     try {
-      const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: cleanPrompt, history, transactions: statement.transactions, budgets }) });
+      const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: cleanPrompt, history, transactions: combinedTransactions, budgets, attachments: attachmentMeta, sheetConnected: Boolean(sheetConnection) }) });
       const result = await response.json();
       if (!response.ok || result.error) throw new Error(result.error || "Question failed.");
-      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: result.answer, analysis: sanitizeAnalystResponse(result.analysis) }], updatedAt: new Date().toISOString() };
+      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: result.answer, analysis: sanitizeAnalystResponse(result.analysis), actions: sanitizeAgentActions(result.actions) }], updatedAt: new Date().toISOString() };
       setChatMessages(finalThread.messages);
       setChatThreads((current) => [finalThread, ...current.filter((chat) => chat.id !== id)]);
       void persistChat(finalThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
     } catch {
-      const analysis = buildAnalystResponse(cleanPrompt, statement.transactions, budgets);
-      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: analystMarkdown(analysis), analysis }], updatedAt: new Date().toISOString() };
+      const analysis = buildAnalystResponse(cleanPrompt, combinedTransactions, budgets);
+      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: analystMarkdown(analysis), analysis, actions: fallbackAgentActions(cleanPrompt, attachmentMeta.length) }], updatedAt: new Date().toISOString() };
       setChatMessages(finalThread.messages);
       setChatThreads((current) => [finalThread, ...current.filter((chat) => chat.id !== id)]);
       void persistChat(finalThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
@@ -684,6 +766,84 @@ export default function Home() {
     if (!response.ok) throw new Error(result.error || "Could not save this chat.");
   }
 
+  function updateActionState(messageId: string, actionId: string, status: AgentAction["status"], result?: string, save = true) {
+    const messages = chatMessages.map((message) => message.id === messageId ? { ...message, actions: message.actions?.map((action) => action.id === actionId ? { ...action, status, ...(result ? { result } : {}) } : action) } : message);
+    setChatMessages(messages);
+    if (!activeChatId) return;
+    const current = chatThreads.find((chat) => chat.id === activeChatId);
+    if (!current) return;
+    const next = { ...current, messages, updatedAt: new Date().toISOString() };
+    setChatThreads((threads) => [next, ...threads.filter((chat) => chat.id !== next.id)]);
+    if (save) void persistChat(next).catch((error) => notify(error instanceof Error ? error.message : "Could not save this action.", "bad"));
+  }
+
+  async function runAgentAction(messageId: string, action: AgentAction) {
+    if (runningActionId || action.status === "completed") return;
+    if (action.requiresConfirmation && !window.confirm(`${action.label}\n\n${action.description}\n\nRun this action now?`)) return;
+    setRunningActionId(action.id);
+    updateActionState(messageId, action.id, "running", "Working…", false);
+    try {
+      let result = "Completed.";
+      if (action.type === "import_attachments") {
+        const incoming = chatAttachments.filter((attachment) => attachment.status === "ready").flatMap((attachment) => attachment.statement?.transactions || []);
+        if (!incoming.length) throw new Error("Attach at least one file with transactions first.");
+        const signature = (transaction: Transaction) => `${transaction.date}|${transaction.merchant.toLowerCase()}|${transaction.type}|${transaction.amount}`;
+        const known = new Set(statement.transactions.map(signature));
+        const added = incoming.filter((transaction) => { const key = signature(transaction); if (known.has(key)) return false; known.add(key); return true; });
+        const nextStatement = { ...statement, transactions: [...added, ...statement.transactions], insights: [`Added ${added.length} transaction${added.length === 1 ? "" : "s"} from Ask Finora attachments.`, ...statement.insights.slice(0, 2)] };
+        await persistLedger(nextStatement, budgets); setStatement(nextStatement); setSynced(false);
+        result = `${added.length} new transaction${added.length === 1 ? "" : "s"} added to your ledger.`;
+      } else if (action.type === "recategorize_transactions") {
+        if (!action.payload.merchant || !action.payload.category) throw new Error("A merchant and valid category are required.");
+        const needle = action.payload.merchant.toLowerCase();
+        let changed = 0;
+        const nextStatement = { ...statement, transactions: statement.transactions.map((transaction) => `${transaction.merchant} ${transaction.description}`.toLowerCase().includes(needle) ? (changed += 1, { ...transaction, category: action.payload.category as Category, confidence: 1, explanation: "Updated through Ask Finora." }) : transaction) };
+        if (!changed) throw new Error(`No transactions matched ${action.payload.merchant}.`);
+        await persistLedger(nextStatement, budgets); setStatement(nextStatement); setSynced(false); result = `${changed} transaction${changed === 1 ? "" : "s"} recategorized.`;
+      } else if (action.type === "delete_transactions") {
+        if (!action.payload.merchant) throw new Error("A specific merchant or person is required before deleting transactions.");
+        const needle = action.payload.merchant.toLowerCase();
+        const removed = statement.transactions.filter((transaction) => `${transaction.merchant} ${transaction.description}`.toLowerCase().includes(needle));
+        if (!removed.length) throw new Error(`No transactions matched ${action.payload.merchant}.`);
+        const nextStatement = { ...statement, transactions: statement.transactions.filter((transaction) => !`${transaction.merchant} ${transaction.description}`.toLowerCase().includes(needle)) };
+        await persistLedger(nextStatement, budgets); setStatement(nextStatement); setSynced(false); result = `${removed.length} matching transaction${removed.length === 1 ? "" : "s"} removed.`;
+      } else if (action.type === "add_transaction") {
+        if (!action.payload.merchant || !action.payload.amount || !action.payload.direction) throw new Error("Merchant, amount, and debit/credit direction are required.");
+        const transaction: Transaction = { id: crypto.randomUUID(), date: action.payload.date || new Date().toISOString().slice(0, 10), merchant: action.payload.merchant, description: action.payload.description || "Added through Ask Finora", amount: action.payload.amount, type: action.payload.direction, category: (action.payload.category as Category) || "Miscellaneous", confidence: 1, source: "Ask Finora", explanation: "Added and confirmed by you through Ask Finora." };
+        const nextStatement = { ...statement, transactions: [transaction, ...statement.transactions] };
+        await persistLedger(nextStatement, budgets); setStatement(nextStatement); setSynced(false); result = `${transaction.merchant} ${money(transaction.amount)} added.`;
+      } else if (action.type === "sync_sheet" || action.type === "create_sheet") {
+        const ok = await performSheetAction(action.type === "create_sheet" || !sheetConnection ? "create" : "sync", action.payload.name ? { name: action.payload.name } : {});
+        if (!ok) throw new Error("Finish Google authorization, then run this action again.");
+        result = sheetConnection ? "Google Sheets updated." : "Finora workbook created and connected.";
+      } else if (action.type === "rename_sheet" || action.type === "copy_sheet" || action.type === "share_sheet" || action.type === "add_sheet_tab" || action.type === "delete_sheet_tab" || action.type === "append_sheet_rows" || action.type === "update_sheet_range" || action.type === "clear_sheet_range") {
+        const request = action.type === "rename_sheet" ? ["rename", { name: action.payload.name }] : action.type === "copy_sheet" ? ["copy", { name: action.payload.name }] : action.type === "share_sheet" ? ["share", { email: action.payload.email }] : action.type === "add_sheet_tab" ? ["addTab", { name: action.payload.name || action.payload.tab }] : action.type === "delete_sheet_tab" ? ["deleteTab", { name: action.payload.name || action.payload.tab }] : action.type === "append_sheet_rows" ? ["appendRows", { tab: action.payload.tab, valuesJson: action.payload.valuesJson }] : action.type === "update_sheet_range" ? ["updateRange", { range: action.payload.range, valuesJson: action.payload.valuesJson }] : ["clearRange", { range: action.payload.range }];
+        const ok = await performSheetAction(request[0] as string, request[1] as Record<string, string>);
+        if (!ok) throw new Error("Google Sheets action could not be completed.");
+        result = "Google Sheets updated.";
+      } else if (action.type === "set_budget") {
+        if (!action.payload.category || !action.payload.amount) throw new Error("A category and monthly limit are required.");
+        const nextBudgets = [...budgets.filter((budget) => budget.category !== action.payload.category), { category: action.payload.category as Category, limit: action.payload.amount }];
+        await persistLedger(statement, nextBudgets); setBudgets(nextBudgets); result = `${action.payload.category} budget set to ${money(action.payload.amount)}.`;
+      } else if (action.type === "remove_budget") {
+        if (!action.payload.category) throw new Error("A budget category is required.");
+        const nextBudgets = budgets.filter((budget) => budget.category !== action.payload.category);
+        await persistLedger(statement, nextBudgets); setBudgets(nextBudgets); result = `${action.payload.category} budget removed.`;
+      } else if (action.type === "export_report") {
+        const format = ["csv", "xlsx", "json", "markdown"].includes(action.payload.name.toLowerCase()) ? action.payload.name.toLowerCase() as "csv" | "xlsx" | "json" | "markdown" : "xlsx";
+        await exportData(format); result = `${format === "xlsx" ? "Excel" : format.toUpperCase()} export downloaded.`;
+      } else if (action.type === "open_reports") {
+        setView("reports"); result = "AI Reports opened.";
+      } else if (action.type === "schedule_report") {
+        const frequency = action.payload.frequency || "weekly"; await enableReport(frequency); result = `${frequency === "monthly" ? "Monthly" : "Weekly"} report authorization started.`;
+      }
+      updateActionState(messageId, action.id, "completed", result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "This action could not be completed.";
+      updateActionState(messageId, action.id, "failed", message); notify(message, "bad");
+    } finally { setRunningActionId(null); }
+  }
+
   function startNewChat() {
     if (asking) return;
     if (!activeChatId && chatMessages.length) {
@@ -695,6 +855,7 @@ export default function Home() {
     }
     setActiveChatId(null);
     setChatMessages([]);
+    setChatAttachments([]);
     setQuestion("");
   }
 
@@ -702,6 +863,7 @@ export default function Home() {
     if (asking) return;
     setActiveChatId(chat.id);
     setChatMessages(chat.messages);
+    setChatAttachments([]);
     setQuestion("");
   }
 
@@ -854,7 +1016,7 @@ export default function Home() {
 
         {view === "reports" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ReportsPage frequency={reportFrequency} enabled={weeklyEmailEnabled} timezone={reportTimezone} period={reportFrequency === "weekly" ? `${week.start} — ${week.end}` : activePeriod} outflow={reportFrequency === "weekly" ? weeklyReportOutflow : reportOutflow} consumption={reportFrequency === "weekly" ? weeklyReportOutflow - weeklyReportTransfers : summary.spend} transfers={reportFrequency === "weekly" ? weeklyReportTransfers : summary.transfers} topCategory={(reportFrequency === "weekly" ? weeklyTopCategory : reportTopCategory)?.[0] || "None"} topMerchant={(reportFrequency === "weekly" ? weeklyTopMerchant : reportTopMerchant)?.[0] || "None"} largest={reportFrequency === "weekly" ? (weeklyLargest ? `${weeklyLargest.merchant} · ${money(weeklyLargest.amount)}` : "None") : (reportLargest ? `${reportLargest.merchant} · ${money(reportLargest.amount)}` : "None")} healthScore={health.score} healthLabel={health.label} suggestion={reportFrequency === "weekly" ? week.suggestion : (statement.insights[0] || "Keep importing transactions to receive a useful monthly suggestion.")} onFrequency={(frequency) => void chooseReportFrequency(frequency)} onTimezone={(timezone) => { setReportTimezone(timezone); if (weeklyEmailEnabled) void savePreferences(true, timezone, reportFrequency); }} onEnable={() => void enableReport()} onDisable={() => void disableReport()}/>) }
 
-        {view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ChatWorkspace messages={chatMessages} question={question} asking={asking} transactionCount={statement.transactions.length} userName={session.user.name} onQuestion={setQuestion} onAsk={askAgent} endRef={chatEndRef}/>)}
+        {view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ChatWorkspace messages={chatMessages} question={question} asking={asking} transactionCount={statement.transactions.length} attachments={chatAttachments} attachmentBusy={attachmentBusy} runningActionId={runningActionId} onQuestion={setQuestion} onAsk={askAgent} onAttach={(files) => void handleChatFiles(files)} onRemoveAttachment={(id) => setChatAttachments((current) => current.filter((attachment) => attachment.id !== id))} onRunAction={(messageId, action) => void runAgentAction(messageId, action)} endRef={chatEndRef}/>)}
 
         {false && view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <section className="agent-page">
           <div className="agent-copy"><p className="eyebrow"><span className="live-dot"/>YOUR FINANCIAL COPILOT</p><h1>Ask your money<br/>a real question.</h1><p>Finora gives your agent a clean financial memory through MCP — not a screenshot, not a vague guess.</p><div className="agent-proof"><span><Check size={14}/>Reads your corrected categories</span><span><Check size={14}/>Answers from transaction evidence</span><span><Check size={14}/>Works inside Codex</span></div></div>

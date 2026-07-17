@@ -3,8 +3,26 @@ import { getAuth } from "../../../lib/auth";
 import { getDb } from "../../../db";
 import { chatThread } from "../../../db/schema";
 import { sanitizeAnalystResponse, type AnalystResponse } from "../../../lib/analyst";
+import { sanitizeAgentActions, type AgentAction, type ChatAttachmentMeta } from "../../../lib/agent-actions";
 
-type StoredMessage = { id: string; role: "user" | "assistant"; content: string; analysis?: AnalystResponse };
+type StoredMessage = { id: string; role: "user" | "assistant"; content: string; analysis?: AnalystResponse; actions?: AgentAction[]; attachments?: ChatAttachmentMeta[] };
+
+function cleanAttachments(input: unknown): ChatAttachmentMeta[] {
+  if (!Array.isArray(input)) return [];
+  return input.slice(0, 8).flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const source = item as Record<string, unknown>;
+    if (typeof source.id !== "string" || typeof source.name !== "string") return [];
+    const size = Number(source.size);
+    const transactionCount = Number(source.transactionCount);
+    return [{
+      id: source.id.slice(0, 100),
+      name: source.name.trim().slice(0, 180),
+      size: Number.isFinite(size) ? Math.max(0, Math.min(size, 18 * 1024 * 1024)) : 0,
+      transactionCount: Number.isFinite(transactionCount) ? Math.max(0, Math.min(Math.round(transactionCount), 20_000)) : 0,
+    }];
+  });
+}
 
 async function currentUser(request: Request) {
   const session = await getAuth().api.getSession({ headers: request.headers });
@@ -14,7 +32,12 @@ async function currentUser(request: Request) {
 function cleanMessages(input: unknown): StoredMessage[] | null {
   if (!Array.isArray(input) || input.length > 80) return null;
   const messages = input.filter((item): item is StoredMessage => Boolean(item) && typeof item === "object" && typeof item.id === "string" && (item.role === "user" || item.role === "assistant") && typeof item.content === "string")
-    .map((item) => ({ id: item.id.slice(0, 100), role: item.role, content: item.content.slice(0, 12_000), ...(item.analysis ? { analysis: sanitizeAnalystResponse(item.analysis) } : {}) }));
+    .map((item) => ({
+      id: item.id.slice(0, 100), role: item.role, content: item.content.slice(0, 12_000),
+      ...(item.analysis ? { analysis: sanitizeAnalystResponse(item.analysis) } : {}),
+      ...(item.actions ? { actions: sanitizeAgentActions(item.actions) } : {}),
+      ...(item.attachments ? { attachments: cleanAttachments(item.attachments) } : {}),
+    }));
   return messages.length === input.length ? messages : null;
 }
 

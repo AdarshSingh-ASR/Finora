@@ -251,4 +251,74 @@ export async function deleteSpreadsheet(userId: string) {
   await disconnectSpreadsheet(userId);
 }
 
+function cleanTabName(value: unknown) {
+  const tab = typeof value === "string" ? value.trim() : "";
+  if (!tab || tab.length > 100 || /[\[\]:*?\\/]/.test(tab)) throw new GoogleWorkspaceError("Enter a valid sheet tab name.");
+  return tab;
+}
+
+function connectedWorkbook(connection: Awaited<ReturnType<typeof getSheetConnection>>) {
+  if (!connection) throw new GoogleWorkspaceError("Connect a spreadsheet first.", 404, "SHEET_CONNECTION_REQUIRED");
+  return connection;
+}
+
+export async function addSpreadsheetTab(userId: string, requestedName: unknown) {
+  const connection = connectedWorkbook(await getSheetConnection(userId));
+  const accessToken = await googleToken(userId);
+  const title = cleanTabName(requestedName);
+  await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(connection.spreadsheetId)}:batchUpdate`, { method: "POST", body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] }) });
+  return connection;
+}
+
+export async function deleteSpreadsheetTab(userId: string, requestedName: unknown) {
+  const connection = connectedWorkbook(await getSheetConnection(userId));
+  const accessToken = await googleToken(userId);
+  const title = cleanTabName(requestedName);
+  const metadata = await spreadsheetMetadata(accessToken, connection.spreadsheetId);
+  const sheet = metadata.sheets?.find((item) => item.properties.title.toLowerCase() === title.toLowerCase());
+  if (!sheet) throw new GoogleWorkspaceError(`The “${title}” tab was not found.`, 404);
+  await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(connection.spreadsheetId)}:batchUpdate`, { method: "POST", body: JSON.stringify({ requests: [{ deleteSheet: { sheetId: sheet.properties.sheetId } }] }) });
+  return connection;
+}
+
+function parseRows(input: unknown) {
+  let rows: unknown = input;
+  if (typeof input === "string") {
+    try { rows = JSON.parse(input); } catch { throw new GoogleWorkspaceError("Sheet values must be valid tabular JSON."); }
+  }
+  if (!Array.isArray(rows) || !rows.length || rows.length > 200 || rows.some((row) => !Array.isArray(row) || row.length > 50)) throw new GoogleWorkspaceError("Provide between 1 and 200 rows with at most 50 columns each.");
+  return rows.map((row) => (row as unknown[]).map((cell) => typeof cell === "string" || typeof cell === "number" || typeof cell === "boolean" ? cell : String(cell ?? "")));
+}
+
+export async function appendSpreadsheetRows(userId: string, requestedTab: unknown, input: unknown) {
+  const connection = connectedWorkbook(await getSheetConnection(userId));
+  const accessToken = await googleToken(userId);
+  const tab = cleanTabName(requestedTab);
+  const rows = parseRows(input);
+  const range = `'${tab.replaceAll("'", "''")}'!A1`;
+  const params = new URLSearchParams({ valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS" });
+  await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(connection.spreadsheetId)}/values/${encodeURIComponent(range)}:append?${params}`, { method: "POST", body: JSON.stringify({ majorDimension: "ROWS", values: rows }) });
+  return connection;
+}
+
+export async function updateSpreadsheetRange(userId: string, requestedRange: unknown, input: unknown) {
+  const connection = connectedWorkbook(await getSheetConnection(userId));
+  const accessToken = await googleToken(userId);
+  const range = typeof requestedRange === "string" ? requestedRange.trim() : "";
+  if (!range || range.length > 120 || !/^[^!]{1,100}![A-Za-z]{1,3}\d*(?::[A-Za-z]{1,3}\d*)?$/.test(range.replaceAll("'", ""))) throw new GoogleWorkspaceError("Enter a range such as Transactions!A2:C20.");
+  const rows = parseRows(input);
+  const params = new URLSearchParams({ valueInputOption: "USER_ENTERED" });
+  await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(connection.spreadsheetId)}/values/${encodeURIComponent(range)}?${params}`, { method: "PUT", body: JSON.stringify({ majorDimension: "ROWS", values: rows }) });
+  return connection;
+}
+
+export async function clearSpreadsheetRange(userId: string, requestedRange: unknown) {
+  const connection = connectedWorkbook(await getSheetConnection(userId));
+  const accessToken = await googleToken(userId);
+  const range = typeof requestedRange === "string" ? requestedRange.trim() : "";
+  if (!range || range.length > 120 || !/^[^!]{1,100}![A-Za-z]{1,3}\d*(?::[A-Za-z]{1,3}\d*)?$/.test(range.replaceAll("'", ""))) throw new GoogleWorkspaceError("Enter a range such as Transactions!A2:C20.");
+  await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(connection.spreadsheetId)}/values/${encodeURIComponent(range)}:clear`, { method: "POST", body: "{}" });
+  return connection;
+}
+
 export const googleSheetScope = "https://www.googleapis.com/auth/drive.file";

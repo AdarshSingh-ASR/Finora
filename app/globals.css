@@ -1288,7 +1288,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @keyframes chat-thinking { 50% { transform: translateY(-4px); opacity: .45; } }
 
 .finora-chat-composer-wrap { z-index: 4; padding: 18px max(24px, calc((100% - 940px) / 2)) 19px; background: linear-gradient(to top, #f7faf7 72%, rgba(247,250,247,0)); }
-.finora-chat-composer { width: 100%; min-height: 82px; padding: 13px 13px 10px 16px; border: 1px solid #9bcfbd; border-radius: 14px; background: #fbfffd; box-shadow: 0 15px 45px rgba(8,78,59,.11); display: grid; grid-template-rows: 1fr auto; }
+.finora-chat-composer { width: 100%; min-height: 82px; padding: 13px 13px 10px 16px; border: 1px solid #9bcfbd; border-radius: 14px; background: #fbfffd; box-shadow: 0 15px 45px rgba(8,78,59,.11); display: flex; flex-direction: column; }
 .finora-chat-composer:focus-within { border-color: #16b88b; box-shadow: 0 0 0 3px rgba(22,184,139,.09), 0 15px 45px rgba(8,78,59,.11); }
 .finora-chat-composer textarea { width: 100%; min-height: 30px; max-height: 130px; padding: 2px 0 8px; border: 0; outline: 0; resize: none; background: transparent; color: var(--ink); font-size: 13px; line-height: 1.5; }
 .finora-chat-composer > div { display: flex; align-items: center; justify-content: space-between; }
@@ -1296,6 +1296,38 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .finora-chat-composer button { width: 34px; height: 34px; border: 0; border-radius: 9px; background: #10231c; color: #55d9b5; display: grid; place-items: center; }
 .finora-chat-composer button:disabled { opacity: .28; cursor: default; }
 .finora-chat-composer-wrap > small { display: block; margin-top: 8px; color: #84978f; text-align: center; font-size: 7px; }
+.finora-attachment-strip { width: 100%; margin: -2px 0 10px; display: flex !important; justify-content: flex-start !important; flex-wrap: wrap; gap: 7px; }
+.finora-attachment-strip > span { max-width: min(260px, 100%); min-height: 42px; padding: 7px 8px; border: 1px solid #c8e1d8; border-radius: 9px; background: #f1f9f6; color: #285246; display: grid; grid-template-columns: 16px minmax(0, 1fr) 22px; align-items: center; column-gap: 6px; }
+.finora-attachment-strip > span.reading { border-style: dashed; }
+.finora-attachment-strip > span.error { border-color: #e4b7aa; background: #fff6f3; color: #9d432e; }
+.finora-attachment-strip b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+.finora-attachment-strip small { grid-column: 2; margin: 1px 0 0; overflow: hidden; color: #789087; font: 7px var(--font-geist-mono); text-overflow: ellipsis; white-space: nowrap; }
+.finora-attachment-strip button { grid-column: 3; grid-row: 1 / span 2; width: 22px; height: 22px; border-radius: 6px; background: transparent; color: #688078; }
+.finora-attachment-strip button:hover { background: #dfeee9; color: #143d31; }
+.finora-chat-composer .finora-composer-foot { display: flex; align-items: center; justify-content: space-between; }
+.finora-composer-buttons { display: flex; align-items: center; gap: 6px; }
+.finora-chat-composer .finora-composer-buttons .attach { border: 1px solid #c7ded6; background: #eef8f4; color: #315f51; }
+.finora-chat-composer .finora-composer-buttons .attach:hover { border-color: #82c9b2; background: #e0f4ec; color: #087d61; }
+.finora-message-files { max-width: 640px; margin-top: 8px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.finora-message-files > span { max-width: 260px; padding: 7px 9px; border: 1px solid #bddccf; border-radius: 8px; background: #f2faf7; color: #315f51; display: grid; grid-template-columns: 15px minmax(0, 1fr); align-items: center; gap: 2px 5px; }
+.finora-message-files b { overflow: hidden; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.finora-message-files small { grid-column: 2; margin: 0; font-size: 7px; }
+.finora-agent-actions { width: min(780px, 100%); margin-top: 14px; padding: 13px; border: 1px solid #b9dcd0; border-radius: 12px; background: linear-gradient(135deg, #edf9f5, #f9fcfa); box-shadow: 0 10px 30px rgba(13,94,70,.06); }
+.finora-agent-actions > header { margin-bottom: 9px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.finora-agent-actions > header span { color: #087d61; display: flex; align-items: center; gap: 5px; font: 750 8px var(--font-geist-mono); letter-spacing: .1em; }
+.finora-agent-actions > header small { margin: 0; font-size: 7px; }
+.finora-agent-actions > div { display: grid; gap: 7px; }
+.finora-agent-actions article { min-height: 66px; padding: 10px; border: 1px solid #d1e5de; border-radius: 9px; background: rgba(255,255,255,.86); display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 9px; }
+.finora-agent-actions article.completed { border-color: #9fd5c2; background: #ebf8f3; }
+.finora-agent-actions article.failed { border-color: #e5b9ac; background: #fff8f5; }
+.finora-action-icon { width: 30px; height: 30px; border-radius: 8px; background: #dff5ec; color: #087d61; display: grid; place-items: center; }
+.finora-agent-actions article > div { min-width: 0; }
+.finora-agent-actions article strong { color: #173b2f; font-size: 10px; }
+.finora-agent-actions article p { margin: 3px 0 0; color: #6e857d; font-size: 8px; line-height: 1.45; }
+.finora-agent-actions article small { margin: 4px 0 0; color: #087d61; font-size: 7px; }
+.finora-agent-actions article > button { min-height: 31px; padding: 0 10px; border: 1px solid #9bcfbd; border-radius: 7px; background: #10231c; color: #dffbf2; font-size: 8px; font-weight: 700; white-space: nowrap; }
+.finora-agent-actions article > button:hover { background: #087d61; }
+.finora-agent-actions article > button:disabled { opacity: .58; cursor: default; }
 
 @media (max-width: 760px) {
   .main-nav.open { max-height: calc(100vh - 84px); overflow-y: auto; }
@@ -1321,4 +1353,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .analyst-donut { width: 118px; height: 118px; }.analyst-donut > span { width: 74px; height: 74px; }
   .analyst-table-wrap > div { max-height: 260px; }
   .finora-chat-composer-wrap { padding: 12px 12px 10px; }
+  .finora-agent-actions article { grid-template-columns: 28px minmax(0, 1fr); }
+  .finora-agent-actions article > button { grid-column: 2; justify-self: start; }
+  .finora-agent-actions > header { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .finora-attachment-strip > span { max-width: 100%; width: 100%; }
 }

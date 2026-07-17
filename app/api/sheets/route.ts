@@ -1,8 +1,9 @@
 import { getAuth } from "../../../lib/auth";
 import {
-  GoogleWorkspaceError, connectSpreadsheet, copySpreadsheet, createSpreadsheet, deleteSpreadsheet,
+  GoogleWorkspaceError, addSpreadsheetTab, appendSpreadsheetRows, clearSpreadsheetRange,
+  connectSpreadsheet, copySpreadsheet, createSpreadsheet, deleteSpreadsheet, deleteSpreadsheetTab,
   disconnectSpreadsheet, getSheetConnection, listSpreadsheets, moveSpreadsheet, renameSpreadsheet,
-  shareSpreadsheet, syncSpreadsheet,
+  shareSpreadsheet, syncSpreadsheet, updateSpreadsheetRange,
 } from "../../../lib/google-sheets";
 
 export const runtime = "edge";
@@ -48,7 +49,12 @@ export async function POST(request: Request) {
     } else if (action === "share") {
       if (typeof body.email !== "string") throw new GoogleWorkspaceError("Enter an email address.");
       connection = await shareSpreadsheet(user.id, body.email);
-    } else throw new GoogleWorkspaceError("Unknown Google Sheets action.");
+    } else if (action === "addTab") connection = await addSpreadsheetTab(user.id, body.name);
+    else if (action === "deleteTab") connection = await deleteSpreadsheetTab(user.id, body.name);
+    else if (action === "appendRows") connection = await appendSpreadsheetRows(user.id, body.tab, body.valuesJson);
+    else if (action === "updateRange") connection = await updateSpreadsheetRange(user.id, body.range, body.valuesJson);
+    else if (action === "clearRange") connection = await clearSpreadsheetRange(user.id, body.range);
+    else throw new GoogleWorkspaceError("Unknown Google Sheets action.");
     return Response.json({ ok: true, connection });
   } catch (error) { return failure(error); }
 }
