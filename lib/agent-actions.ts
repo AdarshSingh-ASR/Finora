@@ -3,7 +3,7 @@ import type { Category } from "./types";
 
 export const agentActionTypes = [
   "import_attachments", "recategorize_transactions", "delete_transactions", "add_transaction",
-  "sync_sheet", "create_sheet", "rename_sheet", "copy_sheet", "share_sheet",
+  "open_sheet", "sync_sheet", "create_sheet", "rename_sheet", "copy_sheet", "share_sheet",
   "add_sheet_tab", "delete_sheet_tab", "append_sheet_rows", "update_sheet_range", "clear_sheet_range",
   "set_budget", "remove_budget", "export_report", "open_reports", "schedule_report",
 ] as const;
@@ -101,6 +101,7 @@ export function fallbackAgentActions(question: string, attachmentCount: number):
   const lower = question.toLowerCase();
   const raw: Array<Partial<AgentAction> & { type: AgentActionType; payload?: Partial<AgentActionPayload> }> = [];
   const sheetIntent = /\b(sheet|sheets|spreadsheet|workbook)\b/.test(lower);
+  if (sheetIntent && /\b(open|view|show|visit|go to)\b/.test(lower)) raw.push({ type: "open_sheet", label: "Open Google Sheet", description: "Open your connected Finora workbook.", requiresConfirmation: false });
   if (attachmentCount && !sheetIntent && /\b(import|add|save|merge|categorize)\b/.test(lower)) raw.push({ type: "import_attachments", label: "Add files to your ledger", description: `Import and categorize transactions from ${attachmentCount} attached file${attachmentCount === 1 ? "" : "s"}.` });
   if (sheetIntent && /\b(sync|update|upload|send|push|add|put|write)\b/.test(lower)) raw.push({ type: "sync_sheet", label: "Sync Google Sheets", description: attachmentCount ? `Write the ${attachmentCount} attached file${attachmentCount === 1 ? "" : "s"} to your connected Finora workbook.` : "Update the connected workbook with the latest Finora ledger." });
   if (/\b(create|make|new)\b.*\b(sheet|spreadsheet|workbook)\b/.test(lower)) raw.push({ type: "create_sheet", label: "Create financial workbook", description: "Create and connect a new Finora Google Sheets dashboard." });

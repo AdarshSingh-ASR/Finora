@@ -854,7 +854,8 @@ export default function Home() {
 
   async function runAgentAction(messageId: string, action: AgentAction) {
     if (runningActionId || action.status === "completed") return;
-    if (action.requiresConfirmation && !window.confirm(`${action.label}\n\n${action.description}\n\nRun this action now?`)) return;
+    const destructiveAction = action.type === "delete_transactions" || action.type === "delete_sheet_tab" || action.type === "clear_sheet_range";
+    if (action.requiresConfirmation && destructiveAction && !window.confirm(`${action.label}\n\n${action.description}\n\nThis removes data. Continue?`)) return;
     setRunningActionId(action.id);
     updateActionState(messageId, action.id, "running", "Working…", false);
     try {
@@ -863,7 +864,11 @@ export default function Home() {
       const actionScope = sourceMessage?.evidenceScope || "ledger";
       const attachmentOnly = actionScope === "attachments";
       const scopedStatement = actionScope === "ledger" ? undefined : statementFromAttachments(chatContextAttachmentsRef.current, actionScope === "combined" ? statement : undefined) || undefined;
-      if (action.type === "import_attachments") {
+      if (action.type === "open_sheet") {
+        if (!sheetConnection?.spreadsheetUrl) throw new Error("Connect Google Sheets first.");
+        window.open(sheetConnection.spreadsheetUrl, "_blank", "noopener,noreferrer");
+        result = "Google Sheet opened.";
+      } else if (action.type === "import_attachments") {
         const incoming = [...chatContextAttachmentsRef.current, ...chatAttachmentsRef.current].filter((attachment) => attachment.status === "ready").flatMap((attachment) => attachment.statement?.transactions || []);
         if (!incoming.length) throw new Error("Attach at least one file with transactions first.");
         const signature = (transaction: Transaction) => `${transaction.date}|${transaction.merchant.toLowerCase()}|${transaction.type}|${transaction.amount}`;
