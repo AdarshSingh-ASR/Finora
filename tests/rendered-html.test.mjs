@@ -5,6 +5,7 @@ import { readFile, readdir } from "node:fs/promises";
 test("build contains the Finora product experience", async () => {
   const landing = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const dashboard = await readFile(new URL("../app/dashboard/page.tsx", import.meta.url), "utf8");
+  const askRoute = await readFile(new URL("../app/api/ask/route.ts", import.meta.url), "utf8");
   const page = `${landing}\n${dashboard}`;
   const assetsDirectory = new URL("../dist/client/assets/", import.meta.url);
   const assets = await readdir(assetsDirectory);
@@ -15,5 +16,10 @@ test("build contains the Finora product experience", async () => {
   assert.doesNotMatch(dashboard, /Apps Script web app URL|Matches FINORA_SECRET/);
   assert.match(landing, /Every statement/); assert.match(landing, /The MCP is/); assert.match(landing, /Raw files are never kept/);
   assert.match(dashboard, /No sample transactions\. Your dashboard starts empty\./);
+  assert.match(dashboard, /AnalystReport/); assert.match(dashboard, /What Finora noticed/); assert.match(dashboard, /VISUAL BREAKDOWN/);
+  assert.match(dashboard, /sidebar-agent-section/); assert.match(dashboard, /sidebar-new-chat/); assert.match(dashboard, /RECENT CHATS/);
+  assert.doesNotMatch(dashboard, /finora-chat-header|finora-chat-history|finora-history-new/);
+  assert.match(askRoute, /buildAnalystResponse/); assert.match(askRoute, /proactive, evidence-based personal finance analyst/);
+  assert.doesNotMatch(dashboard, /Finding transactions with/);
   assert.doesNotMatch(page, /sampleStatement|defaultBudgets|codex-preview|Your site is taking shape|react-loading-skeleton/);
 });

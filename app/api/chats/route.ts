@@ -2,8 +2,9 @@ import { and, desc, eq } from "drizzle-orm";
 import { getAuth } from "../../../lib/auth";
 import { getDb } from "../../../db";
 import { chatThread } from "../../../db/schema";
+import { sanitizeAnalystResponse, type AnalystResponse } from "../../../lib/analyst";
 
-type StoredMessage = { id: string; role: "user" | "assistant"; content: string };
+type StoredMessage = { id: string; role: "user" | "assistant"; content: string; analysis?: AnalystResponse };
 
 async function currentUser(request: Request) {
   const session = await getAuth().api.getSession({ headers: request.headers });
@@ -13,7 +14,7 @@ async function currentUser(request: Request) {
 function cleanMessages(input: unknown): StoredMessage[] | null {
   if (!Array.isArray(input) || input.length > 80) return null;
   const messages = input.filter((item): item is StoredMessage => Boolean(item) && typeof item === "object" && typeof item.id === "string" && (item.role === "user" || item.role === "assistant") && typeof item.content === "string")
-    .map((item) => ({ id: item.id.slice(0, 100), role: item.role, content: item.content.slice(0, 12_000) }));
+    .map((item) => ({ id: item.id.slice(0, 100), role: item.role, content: item.content.slice(0, 12_000), ...(item.analysis ? { analysis: sanitizeAnalystResponse(item.analysis) } : {}) }));
   return messages.length === input.length ? messages : null;
 }
 

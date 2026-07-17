@@ -6,8 +6,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "site-creator-d1",
-      "database_id": "00000000-0000-4000-8000-000000000000",
+      "database_name": "finora-db",
+      "database_id": "ae75437f-17e1-4739-af52-9f008eb85011",
       "migrations_dir": "drizzle"
     }
   ],

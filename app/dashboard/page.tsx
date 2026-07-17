@@ -13,7 +13,8 @@ import {
   X, Zap, LogOut, Mail, UserRound, Plus, Trash2, Database, ArrowRight, MessageSquare,
   Files, Folder, Pencil, RefreshCw, Share2, Unlink,
 } from "lucide-react";
-import { answerFinanceQuestion, budgetStatus, categories, compareMonths, detectAnomalies, detectSubscriptions, financialHealthScore, findDuplicateTransactions, inPeriod, latestPeriod, money, summarize, weeklyReport } from "../../lib/finance";
+import { budgetStatus, categories, compareMonths, detectAnomalies, detectSubscriptions, financialHealthScore, findDuplicateTransactions, inPeriod, latestPeriod, money, summarize, weeklyReport } from "../../lib/finance";
+import { analystMarkdown, buildAnalystResponse, chartColors, sanitizeAnalystResponse, type AnalystChart, type AnalystResponse } from "../../lib/analyst";
 import { categoryColors } from "../../lib/category-colors";
 import type { Budget, Category, StatementResult, Transaction } from "../../lib/types";
 import { authClient, signIn, signOut, useSession } from "../../lib/auth-client";
@@ -24,7 +25,7 @@ import { BorderBeam } from "../../components/magicui/border-beam";
 
 type View = "overview" | "transactions" | "reports" | "agent";
 type Toast = { tone: "good" | "bad"; message: string } | null;
-type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string; analysis?: AnalystResponse };
 type ChatThread = { id: string; title: string; messages: ChatMessage[]; createdAt: string; updatedAt: string };
 type SheetConnection = { spreadsheetId: string; spreadsheetUrl: string; name: string; folderId?: string | null; lastSyncedAt: string; stale?: boolean };
 type SheetFile = { id: string; name: string; webViewLink?: string; modifiedTime?: string; parents?: string[] };
@@ -43,6 +44,66 @@ function MiniTrend({ values, large = false }: { values: number[]; large?: boolea
       <polyline points={points} fill="none" stroke="#0f9c74" strokeWidth="2.2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+}
+
+function analystValue(value: number, unit: AnalystChart["unit"]) {
+  if (unit === "currency") return money(value);
+  if (unit === "percent") return `${Math.round(value)}%`;
+  return new Intl.NumberFormat("en-IN").format(value);
+}
+
+function AnalystChartView({ chart }: { chart: AnalystChart }) {
+  const [selected, setSelected] = useState(0);
+  const total = chart.data.reduce((sum, point) => sum + point.value, 0);
+  const maximum = Math.max(...chart.data.map((point) => point.value), 1);
+  const active = chart.data[Math.min(selected, chart.data.length - 1)] || chart.data[0];
+  const linePoints = chart.data.map((point, index) => ({
+    x: chart.data.length === 1 ? 310 : 26 + index / (chart.data.length - 1) * 568,
+    y: 148 - point.value / maximum * 116,
+  }));
+  const donut = chart.data.reduce<{ cursor: number; parts: string[] }>((state, point, index) => {
+    const end = state.cursor + (total ? point.value / total * 360 : 0);
+    state.parts.push(`${chartColors[index % chartColors.length]} ${state.cursor}deg ${end}deg`);
+    state.cursor = end;
+    return state;
+  }, { cursor: 0, parts: [] });
+
+  return <section className="analyst-chart" aria-label={chart.title}>
+    <header><div><small>VISUAL BREAKDOWN</small><h4>{chart.title}</h4>{chart.subtitle && <p>{chart.subtitle}</p>}</div><span>{chart.type}</span></header>
+    {chart.type === "bar" && <div className="analyst-bar-list">
+      {chart.data.map((point, index) => <button key={`${point.label}-${index}`} className={selected === index ? "active" : ""} onMouseEnter={() => setSelected(index)} onFocus={() => setSelected(index)} onClick={() => setSelected(index)}>
+        <span><strong>{point.label}</strong><em>{analystValue(point.value, chart.unit)}</em></span><i><b style={{ width: `${Math.max(3, point.value / maximum * 100)}%`, background: chartColors[index % chartColors.length] }}/></i>
+      </button>)}
+    </div>}
+    {chart.type === "line" && <div className="analyst-line-wrap">
+      <svg viewBox="0 0 620 170" role="img" aria-label={`${chart.title} line chart`}>
+        <defs><linearGradient id={`analyst-area-${chart.title.replace(/\W/g, "")}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#16b88b" stopOpacity=".28"/><stop offset="1" stopColor="#16b88b" stopOpacity="0"/></linearGradient></defs>
+        {[32, 70, 109, 148].map((y) => <line key={y} x1="26" x2="594" y1={y} y2={y} className="analyst-grid-line"/>)}
+        {linePoints.length > 1 && <path d={`M${linePoints[0].x},148 L${linePoints.map((point) => `${point.x},${point.y}`).join(" L")} L${linePoints.at(-1)!.x},148 Z`} fill={`url(#analyst-area-${chart.title.replace(/\W/g, "")})`}/>}
+        <polyline points={linePoints.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke="#0d9f76" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+        {linePoints.map((point, index) => <circle key={`${chart.data[index].label}-${index}`} cx={point.x} cy={point.y} r={selected === index ? 7 : 5} tabIndex={0} role="button" aria-label={`${chart.data[index].label}: ${analystValue(chart.data[index].value, chart.unit)}`} className={selected === index ? "active" : ""} onMouseEnter={() => setSelected(index)} onFocus={() => setSelected(index)} onClick={() => setSelected(index)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelected(index); }}/>) }
+      </svg>
+      <div className="analyst-line-labels">{chart.data.map((point, index) => <button className={selected === index ? "active" : ""} key={`${point.label}-${index}`} onClick={() => setSelected(index)}>{point.label}</button>)}</div>
+    </div>}
+    {chart.type === "donut" && <div className="analyst-donut-wrap">
+      <button className="analyst-donut" style={{ background: `conic-gradient(${donut.parts.join(", ") || "#dce9e4 0deg 360deg"})` }} aria-label={`${chart.title}: ${analystValue(total, chart.unit)}`}><span><small>Total</small><strong>{analystValue(total, chart.unit)}</strong></span></button>
+      <div>{chart.data.map((point, index) => <button key={`${point.label}-${index}`} className={selected === index ? "active" : ""} onMouseEnter={() => setSelected(index)} onFocus={() => setSelected(index)} onClick={() => setSelected(index)}><i style={{ background: chartColors[index % chartColors.length] }}/><span>{point.label}</span><strong>{analystValue(point.value, chart.unit)}</strong></button>)}</div>
+    </div>}
+    {active && <div className="analyst-chart-focus"><span>{active.label}</span><strong>{analystValue(active.value, chart.unit)}</strong>{active.detail && <small>{active.detail}</small>}</div>}
+  </section>;
+}
+
+function AnalystReport({ analysis, onAsk }: { analysis: AnalystResponse; onAsk: (prompt?: string) => void }) {
+  return <section className={`finora-analyst-report ${analysis.kind}`} aria-label={`${analysis.title} analytical report`}>
+    <header className="analyst-report-head"><div><small><Activity size={12}/>FINORA ANALYST BRIEF</small><h3>{analysis.title}</h3><p>{analysis.scope}</p></div><span>{analysis.kind === "report" ? "REPORT" : "LIVE ANALYSIS"}</span></header>
+    {analysis.metrics.length > 0 && <div className="analyst-metrics">{analysis.metrics.map((metric, index) => <article className={metric.tone || "neutral"} key={`${metric.label}-${index}`}><small>{metric.label}</small><strong>{metric.value}</strong>{metric.detail && <p>{metric.detail}</p>}</article>)}</div>}
+    {(analysis.chart || analysis.table) && <div className={`analyst-evidence-grid ${analysis.chart && analysis.table ? "split" : ""}`}>
+      {analysis.chart && <AnalystChartView chart={analysis.chart}/>}
+      {analysis.table && <section className="analyst-table-wrap"><header><small>SUPPORTING DETAIL</small><h4>{analysis.table.title}</h4></header><div><table><thead><tr>{analysis.table.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{analysis.table.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>)}</tr>)}</tbody></table></div></section>}
+    </div>}
+    {analysis.insights.length > 0 && <section className="analyst-insights"><header><Sparkles size={14}/><span>What Finora noticed</span></header><div>{analysis.insights.map((insight, index) => <article className={insight.tone} key={`${insight.title}-${index}`}><i/><span><strong>{insight.title}</strong><p>{insight.detail}</p></span></article>)}</div></section>}
+    {analysis.followUps.length > 0 && <div className="analyst-followups"><small>EXPLORE THIS FURTHER</small><div>{analysis.followUps.map((prompt) => <button key={prompt} onClick={() => onAsk(prompt)}>{prompt}<ArrowUpRight size={13}/></button>)}</div></div>}
+  </section>;
 }
 
 function WorkspaceSkeleton() {
@@ -69,9 +130,7 @@ const financePrompts = [
   "Compare this month with the previous month",
 ];
 
-function ChatWorkspace({ chats, activeChatId, messages, question, asking, transactionCount, userName, onQuestion, onAsk, onNewChat, onSelectChat, onDeleteChat, endRef }: {
-  chats: ChatThread[];
-  activeChatId: string | null;
+function ChatWorkspace({ messages, question, asking, transactionCount, userName, onQuestion, onAsk, endRef }: {
   messages: ChatMessage[];
   question: string;
   asking: boolean;
@@ -79,13 +138,9 @@ function ChatWorkspace({ chats, activeChatId, messages, question, asking, transa
   userName: string;
   onQuestion: (value: string) => void;
   onAsk: (prompt?: string) => void;
-  onNewChat: () => void;
-  onSelectChat: (chat: ChatThread) => void;
-  onDeleteChat: (chat: ChatThread) => void;
   endRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
 
   async function copyReply(message: ChatMessage) {
     await navigator.clipboard.writeText(message.content);
@@ -94,24 +149,7 @@ function ChatWorkspace({ chats, activeChatId, messages, question, asking, transa
   }
 
   return <section className="finora-chat-page" aria-label="Chat with Finora">
-    <header className="finora-chat-header">
-      <div><button className="finora-history-toggle" onClick={() => setHistoryOpen((open) => !open)} aria-label="Show chat history"><MessageSquare size={15}/></button><Mark/><span><strong>Ask Finora</strong><small><i/>Grounded in {transactionCount} transactions</small></span></div>
-    </header>
-
     <div className="finora-chat-body">
-      <aside className={`finora-chat-history ${historyOpen ? "open" : ""}`} aria-label="Chat history">
-        <div className="finora-history-head"><span>YOUR CHATS</span><strong>{chats.length}</strong></div>
-        <button className="finora-history-new" onClick={() => { onNewChat(); setHistoryOpen(false); }}><Plus size={14}/>Start a new chat</button>
-        <div className="finora-history-list">
-          {chats.map((chat) => <div className={`finora-history-item ${chat.id === activeChatId ? "active" : ""}`} key={chat.id}>
-            <button onClick={() => { onSelectChat(chat); setHistoryOpen(false); }}><MessageSquare size={13}/><span><strong>{chat.title}</strong><small>{new Date(chat.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {Math.ceil(chat.messages.length / 2)} repl{Math.ceil(chat.messages.length / 2) === 1 ? "y" : "ies"}</small></span></button>
-            <button onClick={() => onDeleteChat(chat)} aria-label={`Delete ${chat.title}`} title="Delete chat"><Trash2 size={13}/></button>
-          </div>)}
-          {chats.length === 0 && <div className="finora-history-empty"><MessageSquare size={18}/><span>Your conversations will appear here.</span></div>}
-        </div>
-      </aside>
-      {historyOpen && <button className="finora-history-scrim" onClick={() => setHistoryOpen(false)} aria-label="Close chat history"/>}
-
       <div className="finora-chat-conversation">
         <div className="finora-chat-thread" aria-live="polite">
           {messages.length === 0 && <div className="finora-chat-welcome">
@@ -126,7 +164,7 @@ function ChatWorkspace({ chats, activeChatId, messages, question, asking, transa
             <div className="finora-chat-avatar">{message.role === "assistant" ? <Mark/> : <UserRound size={16}/>}</div>
             <div>
               <span>{message.role === "assistant" ? "Finora" : "You"}</span>
-              {message.role === "assistant" ? <div className="finora-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div> : <p>{message.content}</p>}
+              {message.role === "assistant" ? <><div className="finora-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>{message.analysis && <AnalystReport analysis={message.analysis} onAsk={onAsk}/>}</> : <p>{message.content}</p>}
               {message.role === "assistant" && <div className="finora-message-actions">
                 <small><ShieldCheck size={11}/>Based on your ledger</small>
                 <button type="button" onClick={() => void copyReply(message)} aria-label={copiedId === message.id ? "Reply copied" : "Copy reply"} title={copiedId === message.id ? "Copied" : "Copy reply"}>
@@ -222,12 +260,11 @@ function SheetsModal({ connection, files, busy, permissionRequired, onClose, onA
   onLoadFiles: (search?: string) => void;
   onDisconnect: (permanent: boolean) => void;
 }) {
-  const [name, setName] = useState("Finora Financial Dashboard");
+  const [name, setName] = useState(connection?.name || "Finora Financial Dashboard");
   const [search, setSearch] = useState("");
   const [folderId, setFolderId] = useState("");
   const [shareEmail, setShareEmail] = useState("");
 
-  useEffect(() => { if (connection?.name) setName(connection.name); }, [connection?.name]);
   const normalizedFolderId = folderId.match(/\/folders\/([A-Za-z0-9_-]+)/)?.[1] || folderId.trim();
 
   return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal sheets-modal" onMouseDown={(event) => event.stopPropagation()}>
@@ -396,9 +433,13 @@ export default function Home() {
     if (!userId || params.get("sheets") !== "connected") return;
     const action = params.get("sheetAction") === "sync" ? "sync" : "create";
     window.history.replaceState({}, "", window.location.pathname);
-    setSheetOpen(true);
-    setSheetPermissionRequired(false);
-    void performSheetAction(action);
+    queueMicrotask(() => {
+      setSheetOpen(true);
+      setSheetPermissionRequired(false);
+      void performSheetAction(action);
+    });
+  // The OAuth callback is consumed once when the signed-in user becomes available.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   function notify(message: string, tone: "good" | "bad" = "good") {
@@ -501,7 +542,7 @@ export default function Home() {
           const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file);
         });
       }
-      setUploadLabel("Finding transactions with Gemini 2.5 Flash…");
+      setUploadLabel("Finding transactions…");
       const response = await fetch("/api/categorize", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: file.name, mimeType: file.type, fileData, text }),
@@ -623,12 +664,13 @@ export default function Home() {
       const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: cleanPrompt, history, transactions: statement.transactions, budgets }) });
       const result = await response.json();
       if (!response.ok || result.error) throw new Error(result.error || "Question failed.");
-      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: result.answer }], updatedAt: new Date().toISOString() };
+      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: result.answer, analysis: sanitizeAnalystResponse(result.analysis) }], updatedAt: new Date().toISOString() };
       setChatMessages(finalThread.messages);
       setChatThreads((current) => [finalThread, ...current.filter((chat) => chat.id !== id)]);
       void persistChat(finalThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
     } catch {
-      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: answerFinanceQuestion(cleanPrompt, statement.transactions, budgets) }], updatedAt: new Date().toISOString() };
+      const analysis = buildAnalystResponse(cleanPrompt, statement.transactions, budgets);
+      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: analystMarkdown(analysis), analysis }], updatedAt: new Date().toISOString() };
       setChatMessages(finalThread.messages);
       setChatThreads((current) => [finalThread, ...current.filter((chat) => chat.id !== id)]);
       void persistChat(finalThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
@@ -689,10 +731,25 @@ export default function Home() {
           <button className={view === "overview" ? "active" : ""} onClick={() => { setView("overview"); setMenuOpen(false); }}><LayoutDashboard size={16}/>Overview</button>
           <button className={view === "transactions" ? "active" : ""} onClick={() => { setView("transactions"); setMenuOpen(false); }}><ReceiptIndianRupee size={16}/>Transactions</button>
           <button className={view === "reports" ? "active" : ""} onClick={() => { setView("reports"); setMenuOpen(false); }}><CalendarDays size={16}/>AI Reports</button>
-          <button className={view === "agent" ? "active" : ""} onClick={() => { setView("agent"); setMenuOpen(false); }}><Bot size={16}/>Ask Finora <span className="new-dot" /></button>
+          <div className={`sidebar-agent-section ${view === "agent" ? "expanded" : ""}`}>
+            <div className="sidebar-agent-row">
+              <button className={`sidebar-agent-entry ${view === "agent" ? "active" : ""}`} onClick={() => { setView("agent"); setMenuOpen(false); }}><Bot size={16}/><span>Ask Finora</span><span className="new-dot" /></button>
+              <button className="sidebar-new-chat" onClick={() => { setView("agent"); startNewChat(); setMenuOpen(false); }} aria-label="Start a new Ask Finora chat" title="New chat"><Plus size={16}/></button>
+            </div>
+            {view === "agent" && <div className="sidebar-chat-history" aria-label="Ask Finora chat history">
+              <div className="sidebar-chat-history-head"><span>RECENT CHATS</span><strong>{chatThreads.length}</strong></div>
+              <div className="sidebar-chat-history-list">
+                {chatThreads.map((chat) => <div className={`sidebar-chat-item ${chat.id === activeChatId ? "active" : ""}`} key={chat.id}>
+                  <button onClick={() => { selectChat(chat); setMenuOpen(false); }}><MessageSquare size={13}/><span><strong>{chat.title}</strong><small>{new Date(chat.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {Math.ceil(chat.messages.length / 2)} repl{Math.ceil(chat.messages.length / 2) === 1 ? "y" : "ies"}</small></span></button>
+                  <button onClick={() => deleteChat(chat)} aria-label={`Delete ${chat.title}`} title="Delete chat"><Trash2 size={13}/></button>
+                </div>)}
+                {chatThreads.length === 0 && <div className="sidebar-chat-empty"><MessageSquare size={17}/><span>Your conversations will appear here.</span></div>}
+              </div>
+            </div>}
+          </div>
         </nav>
         <div className="top-actions">
-          {session?.user && hasData && <button className="sheet-button" onClick={() => { setSheetOpen(true); setSheetFiles(null); }}>{synced ? <Check size={15}/> : <FileSpreadsheet size={16}/>}<span>{synced ? "Sheets synced" : sheetConnection ? "Sync Sheets" : "Connect Sheets"}</span></button>}
+          {session?.user && <button className="sheet-button" onClick={() => { setSheetOpen(true); setSheetFiles(null); }}>{synced ? <Check size={15}/> : <FileSpreadsheet size={16}/>}<span>{synced ? "Sheets synced" : sheetConnection ? "Sync Sheets" : "Connect Sheets"}</span></button>}
           {session?.user ? <button className="avatar" onClick={() => setAccountOpen(true)} aria-label="Account menu" title={session.user.email}>{session.user.image ? <img src={session.user.image} alt=""/> : session.user.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</button> : <Button variant="outline" size="sm" onClick={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} disabled={sessionPending}><UserRound size={15}/><span>Sign in</span></Button>}
           <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Open menu"><Menu size={20}/></button>
         </div>
@@ -797,7 +854,7 @@ export default function Home() {
 
         {view === "reports" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ReportsPage frequency={reportFrequency} enabled={weeklyEmailEnabled} timezone={reportTimezone} period={reportFrequency === "weekly" ? `${week.start} — ${week.end}` : activePeriod} outflow={reportFrequency === "weekly" ? weeklyReportOutflow : reportOutflow} consumption={reportFrequency === "weekly" ? weeklyReportOutflow - weeklyReportTransfers : summary.spend} transfers={reportFrequency === "weekly" ? weeklyReportTransfers : summary.transfers} topCategory={(reportFrequency === "weekly" ? weeklyTopCategory : reportTopCategory)?.[0] || "None"} topMerchant={(reportFrequency === "weekly" ? weeklyTopMerchant : reportTopMerchant)?.[0] || "None"} largest={reportFrequency === "weekly" ? (weeklyLargest ? `${weeklyLargest.merchant} · ${money(weeklyLargest.amount)}` : "None") : (reportLargest ? `${reportLargest.merchant} · ${money(reportLargest.amount)}` : "None")} healthScore={health.score} healthLabel={health.label} suggestion={reportFrequency === "weekly" ? week.suggestion : (statement.insights[0] || "Keep importing transactions to receive a useful monthly suggestion.")} onFrequency={(frequency) => void chooseReportFrequency(frequency)} onTimezone={(timezone) => { setReportTimezone(timezone); if (weeklyEmailEnabled) void savePreferences(true, timezone, reportFrequency); }} onEnable={() => void enableReport()} onDisable={() => void disableReport()}/>) }
 
-        {view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ChatWorkspace chats={chatThreads} activeChatId={activeChatId} messages={chatMessages} question={question} asking={asking} transactionCount={statement.transactions.length} userName={session.user.name} onQuestion={setQuestion} onAsk={askAgent} onNewChat={startNewChat} onSelectChat={selectChat} onDeleteChat={deleteChat} endRef={chatEndRef}/>)}
+        {view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ChatWorkspace messages={chatMessages} question={question} asking={asking} transactionCount={statement.transactions.length} userName={session.user.name} onQuestion={setQuestion} onAsk={askAgent} endRef={chatEndRef}/>)}
 
         {false && view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <section className="agent-page">
           <div className="agent-copy"><p className="eyebrow"><span className="live-dot"/>YOUR FINANCIAL COPILOT</p><h1>Ask your money<br/>a real question.</h1><p>Finora gives your agent a clean financial memory through MCP — not a screenshot, not a vague guess.</p><div className="agent-proof"><span><Check size={14}/>Reads your corrected categories</span><span><Check size={14}/>Answers from transaction evidence</span><span><Check size={14}/>Works inside Codex</span></div></div>
@@ -810,11 +867,9 @@ export default function Home() {
         </section>)}
       </section>
 
-      <footer><div className="footer-brand"><Mark/><span>Built for OpenAI Build Week · Apps for your life</span></div><div><span>Gemini 2.5</span><span>Groq fallback</span><span>MCP</span></div></footer>
-
       <input ref={fileRef} type="file" accept=".pdf,.csv,.tsv,.txt,.xlsx,.xls,image/png,image/jpeg" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleFile(file); }}/>
       <input ref={receiptRef} type="file" accept="image/png,image/jpeg,.pdf" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleFile(file, true); }}/>
-      {sheetOpen && <SheetsModal connection={sheetConnection} files={sheetFiles} busy={syncing} permissionRequired={sheetPermissionRequired} onClose={() => setSheetOpen(false)} onAuthorize={() => void authorizeSheets()} onAction={(action, payload) => void performSheetAction(action, payload)} onLoadFiles={(query) => void loadSheetFiles(query)} onDisconnect={(permanent) => void disconnectSheets(permanent)}/>}
+      {sheetOpen && <SheetsModal key={sheetConnection?.spreadsheetId || "new-sheet"} connection={sheetConnection} files={sheetFiles} busy={syncing} permissionRequired={sheetPermissionRequired} onClose={() => setSheetOpen(false)} onAuthorize={() => void authorizeSheets()} onAction={(action, payload) => void performSheetAction(action, payload)} onLoadFiles={(query) => void loadSheetFiles(query)} onDisconnect={(permanent) => void disconnectSheets(permanent)}/>}
 
       {accountOpen && session?.user && <div className="modal-backdrop" onMouseDown={() => setAccountOpen(false)}><div className="modal account-modal" onMouseDown={(event) => event.stopPropagation()}>
         <button className="modal-close" onClick={() => setAccountOpen(false)}><X size={18}/></button>
