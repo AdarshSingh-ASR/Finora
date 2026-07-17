@@ -49,6 +49,16 @@ export default function LandingPage() {
     else void signIn.social({ provider: "google", callbackURL: "/dashboard" });
   };
 
+  const downloadSkill = () => {
+    const link = document.createElement("a");
+    link.href = "/downloads/finora-finance.zip";
+    link.download = "finora-finance.zip";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => { window.location.href = "/install"; }, 450);
+  };
+
   return (
     <main className="finora-landing" id="top">
       <section className="beige-hero">
@@ -106,7 +116,7 @@ export default function LandingPage() {
           <p>04 · THE AGENT SURFACE</p>
           <h2>The MCP is not an add-on.<br/><em>It is the product.</em></h2>
           <p>Focused tools let any compatible agent parse, review, analyze, question, and export your financial memory without forcing one monolithic workflow.</p>
-          <button onClick={openFinora}>Connect my money memory <ArrowRight size={16}/></button>
+          <button onClick={downloadSkill}>Connect my money memory <ArrowRight size={16}/></button>
         </div>
         <div className="beige-mcp-console" aria-label="Finora MCP tools">
           <header><span><FinoraMark/><strong>finora-mcp</strong></span><small><i/> AGENT READY</small></header>

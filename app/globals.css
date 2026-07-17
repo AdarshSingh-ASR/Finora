@@ -964,6 +964,58 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 /* Dashboard — turquoise editorial workspace */
+/* Finora skill installation */
+.skill-install-page { min-height: 100vh; background-color: var(--paper); background-image: linear-gradient(90deg, rgba(15,112,82,.055) 1px, transparent 1px); background-size: 64px 100%; }
+.skill-install-nav { height: 82px; padding: 0 max(24px, calc((100vw - 1320px) / 2)); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--rule); background: rgba(247,250,247,.9); }
+.skill-install-nav > a:last-child { display: inline-flex; align-items: center; gap: 8px; color: var(--muted-ink); font: 700 9px var(--font-geist-mono); letter-spacing: .1em; text-decoration: none; text-transform: uppercase; }
+.skill-install-hero { min-height: 510px; padding: 92px max(24px, calc((100vw - 1320px) / 2)) 82px; position: relative; overflow: hidden; display: flex; align-items: flex-end; justify-content: space-between; gap: 50px; background: radial-gradient(circle at 72% 42%, rgba(85,217,181,.32), transparent 25%), linear-gradient(135deg, #d9f5ea, #f7faf7 54%, #bfead9); border-bottom: 1px solid var(--rule); }
+.skill-install-hero:before { content: ""; position: absolute; right: 9%; top: 48px; width: 270px; height: 270px; border: 1px solid rgba(8,125,97,.2); border-radius: 50%; box-shadow: 0 0 0 58px rgba(22,184,139,.04), 0 0 0 116px rgba(22,184,139,.025); }
+.skill-install-hero > * { position: relative; z-index: 1; }
+.skill-install-hero p, .skill-section-label p { margin: 0; color: var(--accent-deep); font: 750 8px var(--font-geist-mono); letter-spacing: .2em; }
+.skill-install-hero h1 { margin: 18px 0 24px; font-size: clamp(62px, 7.5vw, 108px); font-weight: 445; line-height: .83; letter-spacing: -.078em; }
+.skill-install-hero h1 em, .skill-install-main h2 em, .skill-after-install h2 em { color: var(--accent-deep); font-family: Georgia, serif; font-weight: 400; }
+.skill-install-hero > div > span { display: block; max-width: 650px; color: #42665a; font-size: 14px; line-height: 1.7; }
+.skill-download-button { min-height: 48px; padding: 0 20px; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 10px; border: 1px solid var(--ink); background: var(--ink); color: #f7fffb !important; text-decoration: none; font: 750 9px var(--font-geist-mono); letter-spacing: .1em; text-transform: uppercase; transition: transform .2s, background .2s; }
+.skill-download-button:hover { transform: translateY(-3px); background: var(--accent-deep); }
+.skill-install-grid { padding: 110px max(24px, calc((100vw - 1320px) / 2)) 125px; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr); gap: 74px; border-bottom: 1px solid var(--rule); }
+.skill-section-label { display: flex; align-items: center; gap: 13px; }.skill-section-label > span { width: 29px; height: 29px; display: grid; place-items: center; border: 1px solid var(--rule); color: var(--accent-deep); font: 700 8px var(--font-geist-mono); }
+.skill-install-main > h2 { max-width: 740px; margin: 22px 0 54px; font-size: clamp(52px, 6vw, 82px); font-weight: 440; line-height: .9; letter-spacing: -.067em; }
+.skill-steps { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--rule); }
+.skill-steps > li { padding: 28px 0; display: grid; grid-template-columns: 46px 1fr; gap: 18px; border-bottom: 1px solid var(--rule); }
+.skill-steps > li > span { color: var(--accent-deep); font: 700 8px var(--font-geist-mono); letter-spacing: .14em; }
+.skill-steps h3 { margin: -5px 0 8px; font: 400 26px Georgia, serif; letter-spacing: -.025em; }.skill-steps p { max-width: 650px; margin: 0; color: var(--muted-ink); font-size: 12px; line-height: 1.7; }.skill-steps p code { padding: 2px 5px; background: #e1f3ec; color: var(--accent-deep); font: 10px var(--font-geist-mono); }
+.skill-command { margin-top: 16px; position: relative; border: 1px solid #315448; background: #0d211a; color: #d9fff1; }
+.skill-command > span { display: block; padding: 10px 12px; border-bottom: 1px solid #315448; color: #83b6a5; font: 700 7px var(--font-geist-mono); letter-spacing: .14em; text-transform: uppercase; }
+.skill-command pre { margin: 0; padding: 17px 86px 17px 15px; overflow-x: auto; white-space: pre-wrap; line-height: 1.65; }.skill-command code { color: inherit; font: 10px var(--font-geist-mono); }
+.skill-command button { position: absolute; right: 10px; top: 40px; min-height: 32px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid #356052; background: #15392d; color: #b8f4df; cursor: pointer; font: 700 7px var(--font-geist-mono); text-transform: uppercase; }
+.skill-invocations { margin-top: 17px; display: grid; grid-template-columns: 1fr auto; border: 1px solid var(--rule); }.skill-invocations > * { padding: 13px 14px; border-bottom: 1px solid var(--rule); }.skill-invocations > *:nth-last-child(-n+2) { border-bottom: 0; }.skill-invocations code { color: var(--accent-deep); font: 10px var(--font-geist-mono); }.skill-invocations span { color: var(--muted-ink); font: 700 8px var(--font-geist-mono); letter-spacing: .1em; text-transform: uppercase; }
+.skill-install-aside { display: flex; flex-direction: column; gap: 24px; }
+.skill-ready-card { padding: 25px; border: 1px solid #356052; background: #0d211a; color: #e9fff7; box-shadow: 16px 18px 0 #d4eee4; }.skill-ready-card > header { padding-bottom: 22px; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid #315448; }.skill-ready-card > header > span { display: flex; flex-direction: column; gap: 5px; }.skill-ready-card strong { font-size: 16px; }.skill-ready-card small { color: #83b6a5; font: 700 7px var(--font-geist-mono); letter-spacing: .13em; }.skill-ready-card small i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--accent-bright); }.skill-ready-card .beige-mark { background: #f7faf7; color: var(--accent-deep); }
+.skill-ready-card ul { margin: 0; padding: 20px 0; list-style: none; }.skill-ready-card li { padding: 12px 0; display: grid; grid-template-columns: 18px 1fr; gap: 10px; color: #c2ded4; font-size: 10px; line-height: 1.55; }.skill-ready-card li svg { color: var(--accent-bright); }
+.skill-ready-card > p { margin: 0; padding: 15px; display: flex; gap: 9px; border: 1px solid #315448; background: #122c23; color: #94b8ab; font-size: 9px; line-height: 1.55; }.skill-ready-card > p svg { flex: 0 0 auto; color: var(--accent-bright); }
+.skill-github-card { padding: 25px; border: 1px solid var(--rule); background: rgba(251,255,253,.9); }.skill-github-card > span { display: flex; align-items: center; gap: 9px; color: var(--accent-deep); font: 750 8px var(--font-geist-mono); letter-spacing: .16em; }.skill-github-card h3 { margin: 21px 0 8px; font: 400 28px Georgia, serif; }.skill-github-card > p { margin: 0; color: var(--muted-ink); font-size: 11px; line-height: 1.65; }.skill-github-card > a { margin-top: 18px; display: inline-flex; align-items: center; gap: 7px; color: var(--accent-deep); font: 750 8px var(--font-geist-mono); letter-spacing: .1em; text-transform: uppercase; text-decoration: none; }
+.skill-after-install { min-height: 540px; padding: 100px max(24px, calc((100vw - 1320px) / 2)); position: relative; overflow: hidden; background: #10231c; color: #f7faf7; }.skill-after-install > span { display: flex; align-items: center; gap: 9px; color: #55d9b5; font: 750 8px var(--font-geist-mono); letter-spacing: .16em; }.skill-after-install h2 { margin: 25px 0 46px; font-size: clamp(55px, 6vw, 88px); font-weight: 440; line-height: .88; letter-spacing: -.067em; }.skill-after-install h2 em { color: #55d9b5; }.skill-after-install > div { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid #315448; }.skill-after-install > div p { min-height: 92px; margin: 0; padding: 23px; display: flex; align-items: center; border-right: 1px solid #315448; color: #b9d5cb; font: 400 18px Georgia, serif; }.skill-after-install > div p:last-child { border-right: 0; }.skill-after-install > a { margin-top: 28px; display: inline-flex; align-items: center; gap: 9px; color: #a9ffe7; font: 750 8px var(--font-geist-mono); letter-spacing: .1em; text-transform: uppercase; text-decoration: none; }
+.skill-install-footer { min-height: 94px; padding: 0 max(24px, calc((100vw - 1320px) / 2)); display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 25px; border-bottom: 1px solid var(--rule); }.skill-install-footer p { margin: 0; color: var(--muted-ink); font-size: 9px; }.skill-install-footer small { color: var(--muted-ink); font-size: 8px; }
+
+@media (max-width: 920px) {
+  .skill-install-hero { align-items: flex-start; flex-direction: column; }
+  .skill-install-grid { grid-template-columns: 1fr; }
+  .skill-install-aside { display: grid; grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 640px) {
+  .skill-install-nav { height: 68px; padding: 0 14px; }
+  .skill-install-hero { min-height: 540px; padding: 74px 18px 60px; }
+  .skill-install-hero h1 { font-size: 57px; }
+  .skill-install-grid { padding: 78px 15px 86px; gap: 50px; }
+  .skill-install-main > h2 { font-size: 51px; }
+  .skill-steps > li { grid-template-columns: 30px 1fr; gap: 9px; }
+  .skill-install-aside { grid-template-columns: 1fr; }
+  .skill-after-install { min-height: auto; padding: 82px 15px; }
+  .skill-after-install h2 { font-size: 54px; }
+  .skill-after-install > div { grid-template-columns: 1fr; }.skill-after-install > div p { border-right: 0; border-bottom: 1px solid #315448; }.skill-after-install > div p:last-child { border-bottom: 0; }
+  .skill-install-footer { padding: 18px 15px; grid-template-columns: 1fr auto; }.skill-install-footer p { display: none; }.skill-install-footer small { grid-column: 1 / -1; }
+}
+
 .app-shell { --paper: #f7faf7; --card: #fbfffd; --ink: #10231c; --muted: #587067; --line: #b6d7cb; --green: #16b88b; --blue: #087d61; --acid: #55d9b5; background-color: var(--paper); background-image: linear-gradient(90deg, rgba(15,112,82,.045) 1px, transparent 1px); background-size: 64px 100%; }
 .app-shell .mark { border-radius: 2px; color: var(--acid); box-shadow: none; }
 .app-shell .brand em { background: #d7f5e9; color: #087d61; border-radius: 2px; }

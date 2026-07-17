@@ -6,7 +6,7 @@ Run from the downloaded skill directory:
 node scripts/install.mjs https://your-finora-domain.example
 ```
 
-This installs the open Agent Skills package in `~/.agents/skills/finora-finance` for Codex-compatible discovery and installs the Claude command alias at `~/.claude/commands/finance.md`. Restart the agent if it does not discover the new skill immediately.
+This installs the package in `~/.codex/skills/finora-finance` for Codex, mirrors it to `~/.agents/skills/finora-finance` for other Agent Skills-compatible clients, and installs the Claude command alias at `~/.claude/commands/finance.md`. Restart the agent if it does not discover the new skill immediately.
 
 Invocation:
 

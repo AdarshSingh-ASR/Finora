@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 
 test("build contains the Finora product experience", async () => {
   const landing = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const install = await readFile(new URL("../app/install/page.tsx", import.meta.url), "utf8");
   const dashboard = await readFile(new URL("../app/dashboard/page.tsx", import.meta.url), "utf8");
   const askRoute = await readFile(new URL("../app/api/ask/route.ts", import.meta.url), "utf8");
   const chatsRoute = await readFile(new URL("../app/api/chats/route.ts", import.meta.url), "utf8");
@@ -19,6 +20,9 @@ test("build contains the Finora product experience", async () => {
   assert.match(dashboard, /Create Finora Financial Dashboard/); assert.match(dashboard, /Open Sheet/); assert.match(dashboard, /Disconnect from Finora/);
   assert.doesNotMatch(dashboard, /Apps Script web app URL|Matches FINORA_SECRET/);
   assert.match(landing, /Every statement/); assert.match(landing, /The MCP is/); assert.match(landing, /Raw files are never kept/);
+  assert.match(landing, /finora-finance\.zip/); assert.match(landing, /window\.location\.href = "\/install"/);
+  assert.match(install, /Three small steps/); assert.match(install, /INSTALL FROM GITHUB/); assert.match(install, /\$finora-finance skill-sync/); assert.match(install, /\/finance skill-sync/);
+  assert.ok((await stat(new URL("../public/downloads/finora-finance.zip", import.meta.url))).size > 1_000, "missing packaged Finora skill");
   assert.match(dashboard, /No sample transactions\. Your dashboard starts empty\./);
   assert.match(dashboard, /AnalystReport/); assert.match(dashboard, /What Finora noticed/); assert.match(dashboard, /VISUAL BREAKDOWN/);
   assert.match(dashboard, /sidebar-agent-section/); assert.match(dashboard, /sidebar-new-chat/); assert.match(dashboard, /RECENT CHATS/);
