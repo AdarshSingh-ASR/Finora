@@ -27,7 +27,7 @@ import { fallbackAgentActions, sanitizeAgentActions, type AgentAction, type Chat
 
 type View = "overview" | "transactions" | "reports" | "agent";
 type Toast = { tone: "good" | "bad"; message: string } | null;
-type ChatMessage = { id: string; role: "user" | "assistant"; content: string; analysis?: AnalystResponse; actions?: AgentAction[]; attachments?: ChatAttachmentMeta[] };
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string; analysis?: AnalystResponse; actions?: AgentAction[]; attachments?: ChatAttachmentMeta[]; evidenceScope?: "attachments" | "combined" | "ledger" };
 type ChatThread = { id: string; title: string; messages: ChatMessage[]; createdAt: string; updatedAt: string };
 type ChatAttachment = ChatAttachmentMeta & { mimeType: string; status: "reading" | "ready" | "error"; statement?: StatementResult; error?: string };
 type SheetConnection = { spreadsheetId: string; spreadsheetUrl: string; name: string; folderId?: string | null; lastSyncedAt: string; stale?: boolean };
@@ -133,12 +133,13 @@ const financePrompts = [
   "Compare this month with the previous month",
 ];
 
-function ChatWorkspace({ messages, question, asking, transactionCount, attachments, attachmentBusy, runningActionId, onQuestion, onAsk, onAttach, onRemoveAttachment, onRunAction, endRef }: {
+function ChatWorkspace({ messages, question, asking, transactionCount, attachments, contextAttachments, attachmentBusy, runningActionId, onQuestion, onAsk, onAttach, onRemoveAttachment, onRunAction, endRef }: {
   messages: ChatMessage[];
   question: string;
   asking: boolean;
   transactionCount: number;
   attachments: ChatAttachment[];
+  contextAttachments: ChatAttachment[];
   attachmentBusy: boolean;
   runningActionId: string | null;
   onQuestion: (value: string) => void;
@@ -150,7 +151,7 @@ function ChatWorkspace({ messages, question, asking, transactionCount, attachmen
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const attachmentRef = useRef<HTMLInputElement>(null);
-  const readyAttachments = attachments.filter((attachment) => attachment.status === "ready");
+  const readyAttachments = [...contextAttachments, ...attachments].filter((attachment) => attachment.status === "ready");
   const attachedTransactionCount = readyAttachments.reduce((total, attachment) => total + attachment.transactionCount, 0);
 
   async function copyReply(message: ChatMessage) {
@@ -185,7 +186,7 @@ function ChatWorkspace({ messages, question, asking, transactionCount, attachmen
                 </article>)}</div>
               </section> : null}
               {message.role === "assistant" && <div className="finora-message-actions">
-                <small><ShieldCheck size={11}/>Based on your ledger</small>
+                <small><ShieldCheck size={11}/>{message.evidenceScope === "attachments" ? "Based on attached files" : message.evidenceScope === "combined" ? "Based on attached files + saved ledger" : "Based on your saved ledger"}</small>
                 <button type="button" onClick={() => void copyReply(message)} aria-label={copiedId === message.id ? "Reply copied" : "Copy reply"} title={copiedId === message.id ? "Copied" : "Copy reply"}>
                   {copiedId === message.id ? <Check size={13}/> : <Copy size={13}/>}<span>{copiedId === message.id ? "Copied" : "Copy"}</span>
                 </button>
@@ -349,6 +350,7 @@ export default function Home() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([]);
+  const [chatContextAttachments, setChatContextAttachments] = useState<ChatAttachment[]>([]);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [runningActionId, setRunningActionId] = useState<string | null>(null);
   const [budgets, setBudgets] = useState<Budget[]>([]);
@@ -357,6 +359,9 @@ export default function Home() {
   const fileRef = useRef<HTMLInputElement>(null);
   const receiptRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatAttachmentsRef = useRef<ChatAttachment[]>([]);
+  const chatContextAttachmentsRef = useRef<ChatAttachment[]>([]);
+  const attachmentWorkRef = useRef<Promise<void> | null>(null);
 
   const activePeriod = useMemo(() => latestPeriod(statement.transactions), [statement]);
   const currentTransactions = useMemo(() => inPeriod(statement.transactions, activePeriod), [statement, activePeriod]);
@@ -522,6 +527,8 @@ export default function Home() {
       setBudgets([]);
       setChatMessages([]);
       setChatThreads([]);
+      chatAttachmentsRef.current = []; setChatAttachments([]);
+      chatContextAttachmentsRef.current = []; setChatContextAttachments([]);
       setActiveChatId(null);
       setAccountLoadedFor(null);
       window.location.replace("/");
@@ -554,7 +561,7 @@ export default function Home() {
       onProgress?.("Normalizing spreadsheet…");
       const XLSX = await import("xlsx");
       const book = XLSX.read(await file.arrayBuffer());
-      text = XLSX.utils.sheet_to_csv(book.Sheets[book.SheetNames[0]]);
+      text = book.SheetNames.map((name) => `--- Sheet: ${name} ---\n${XLSX.utils.sheet_to_csv(book.Sheets[name])}`).join("\n\n");
     } else {
       fileData = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file);
@@ -569,22 +576,29 @@ export default function Home() {
 
   async function handleChatFiles(fileList: FileList) {
     if (!session?.user) return notify("Sign in before attaching financial data.", "bad");
-    const files = Array.from(fileList).slice(0, Math.max(0, 8 - chatAttachments.length));
+    const files = Array.from(fileList).slice(0, Math.max(0, 8 - chatAttachmentsRef.current.length));
     if (!files.length) return notify("You can attach up to 8 files per chat.", "bad");
     const pending = files.map<ChatAttachment>((file) => ({ id: crypto.randomUUID(), name: file.name, size: file.size, mimeType: file.type, transactionCount: 0, status: "reading" }));
-    setChatAttachments((current) => [...current, ...pending]);
+    chatAttachmentsRef.current = [...chatAttachmentsRef.current, ...pending];
+    setChatAttachments(chatAttachmentsRef.current);
     setAttachmentBusy(true);
-    for (let index = 0; index < files.length; index += 1) {
-      const file = files[index], id = pending[index].id;
-      try {
-        const parsed = await parseFinancialFile(file);
-        setChatAttachments((current) => current.map((attachment) => attachment.id === id ? { ...attachment, status: "ready", transactionCount: parsed.transactions.length, statement: parsed } : attachment));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : `Could not read ${file.name}.`;
-        setChatAttachments((current) => current.map((attachment) => attachment.id === id ? { ...attachment, status: "error", error: message } : attachment));
+    const work = (async () => {
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index], id = pending[index].id;
+        try {
+          const parsed = await parseFinancialFile(file);
+          chatAttachmentsRef.current = chatAttachmentsRef.current.map((attachment) => attachment.id === id ? { ...attachment, status: "ready", transactionCount: parsed.transactions.length, statement: parsed } : attachment);
+          setChatAttachments(chatAttachmentsRef.current);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : `Could not read ${file.name}.`;
+          chatAttachmentsRef.current = chatAttachmentsRef.current.map((attachment) => attachment.id === id ? { ...attachment, status: "error", error: message } : attachment);
+          setChatAttachments(chatAttachmentsRef.current);
+        }
       }
-    }
-    setAttachmentBusy(false);
+    })();
+    attachmentWorkRef.current = work;
+    try { await work; }
+    finally { if (attachmentWorkRef.current === work) attachmentWorkRef.current = null; setAttachmentBusy(false); }
   }
 
   async function handleFile(file?: File, append = false) {
@@ -719,17 +733,34 @@ export default function Home() {
   async function askAgent(prompt = question) {
     const cleanPrompt = prompt.trim();
     if (!cleanPrompt || asking) return;
-    const readyAttachments = chatAttachments.filter((attachment) => attachment.status === "ready" && attachment.statement);
+    setAsking(true);
+    if (attachmentWorkRef.current) await attachmentWorkRef.current;
+    const newAttachments = chatAttachmentsRef.current.filter((attachment) => attachment.status === "ready" && attachment.statement);
+    if (chatAttachmentsRef.current.length && !newAttachments.length) { notify("Finora could not read the attached file. Remove it or attach a supported statement.", "bad"); setAsking(false); return; }
+    const attachmentById = new Map([...chatContextAttachmentsRef.current, ...newAttachments].map((attachment) => [attachment.id, attachment]));
+    const readyAttachments = [...attachmentById.values()];
+    const newAttachmentMeta = newAttachments.map<ChatAttachmentMeta>(({ id, name, size, transactionCount }) => ({ id, name, size, transactionCount }));
     const attachmentMeta = readyAttachments.map<ChatAttachmentMeta>(({ id, name, size, transactionCount }) => ({ id, name, size, transactionCount }));
     const transactionKey = (transaction: Transaction) => `${transaction.date}|${transaction.merchant.toLowerCase()}|${transaction.type}|${transaction.amount}`;
+    const attachmentTransactions: Transaction[] = [];
+    const attachmentKeys = new Set<string>();
+    for (const transaction of readyAttachments.flatMap((attachment) => attachment.statement?.transactions || [])) {
+      const key = transactionKey(transaction);
+      if (!attachmentKeys.has(key)) { attachmentTransactions.push(transaction); attachmentKeys.add(key); }
+    }
     const combinedTransactions = [...statement.transactions];
     const known = new Set(combinedTransactions.map(transactionKey));
-    for (const transaction of readyAttachments.flatMap((attachment) => attachment.statement?.transactions || [])) {
+    for (const transaction of attachmentTransactions) {
       const key = transactionKey(transaction);
       if (!known.has(key)) { combinedTransactions.push(transaction); known.add(key); }
     }
+    const asksForCombinedData = /\b(combine|combined|both|everything|all (?:my )?data|saved ledger|imported data|existing data)\b/i.test(cleanPrompt);
+    const evidenceScope: ChatMessage["evidenceScope"] = attachmentTransactions.length ? (asksForCombinedData ? "combined" : "attachments") : "ledger";
+    const analysisTransactions = evidenceScope === "attachments" ? attachmentTransactions : combinedTransactions;
+    const analysisBudgets = evidenceScope === "attachments" ? [] : budgets;
     const history = chatMessages.slice(-10).map(({ role, content }) => ({ role, content }));
-    const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: "user", content: cleanPrompt, ...(attachmentMeta.length ? { attachments: attachmentMeta } : {}) };
+    const requestHistory = evidenceScope === "attachments" && newAttachmentMeta.length ? [] : history;
+    const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: "user", content: cleanPrompt, ...(newAttachmentMeta.length ? { attachments: newAttachmentMeta } : {}) };
     const id = activeChatId || crypto.randomUUID();
     const existing = chatThreads.find((chat) => chat.id === id);
     const now = new Date().toISOString();
@@ -740,19 +771,22 @@ export default function Home() {
     setChatMessages(nextMessages);
     setChatThreads((current) => [pendingThread, ...current.filter((chat) => chat.id !== id)]);
     void persistChat(pendingThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
+    chatContextAttachmentsRef.current = readyAttachments;
+    setChatContextAttachments(readyAttachments);
+    chatAttachmentsRef.current = [];
+    setChatAttachments([]);
     setQuestion("");
-    setAsking(true);
     try {
-      const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: cleanPrompt, history, transactions: combinedTransactions, budgets, attachments: attachmentMeta, sheetConnected: Boolean(sheetConnection) }) });
+      const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: cleanPrompt, history: requestHistory, transactions: analysisTransactions, budgets: analysisBudgets, attachments: attachmentMeta, dataScope: evidenceScope, sheetConnected: Boolean(sheetConnection) }) });
       const result = await response.json();
       if (!response.ok || result.error) throw new Error(result.error || "Question failed.");
-      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: result.answer, analysis: sanitizeAnalystResponse(result.analysis), actions: sanitizeAgentActions(result.actions) }], updatedAt: new Date().toISOString() };
+      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: result.answer, analysis: sanitizeAnalystResponse(result.analysis), actions: sanitizeAgentActions(result.actions), evidenceScope }], updatedAt: new Date().toISOString() };
       setChatMessages(finalThread.messages);
       setChatThreads((current) => [finalThread, ...current.filter((chat) => chat.id !== id)]);
       void persistChat(finalThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
     } catch {
-      const analysis = buildAnalystResponse(cleanPrompt, combinedTransactions, budgets);
-      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: analystMarkdown(analysis), analysis, actions: fallbackAgentActions(cleanPrompt, attachmentMeta.length) }], updatedAt: new Date().toISOString() };
+      const analysis = buildAnalystResponse(cleanPrompt, analysisTransactions, analysisBudgets);
+      const finalThread: ChatThread = { ...pendingThread, messages: [...nextMessages, { id: `assistant-${Date.now()}`, role: "assistant", content: analystMarkdown(analysis), analysis, actions: fallbackAgentActions(cleanPrompt, attachmentMeta.length), evidenceScope }], updatedAt: new Date().toISOString() };
       setChatMessages(finalThread.messages);
       setChatThreads((current) => [finalThread, ...current.filter((chat) => chat.id !== id)]);
       void persistChat(finalThread).catch((error) => notify(error instanceof Error ? error.message : "Could not save this chat.", "bad"));
@@ -785,7 +819,7 @@ export default function Home() {
     try {
       let result = "Completed.";
       if (action.type === "import_attachments") {
-        const incoming = chatAttachments.filter((attachment) => attachment.status === "ready").flatMap((attachment) => attachment.statement?.transactions || []);
+        const incoming = [...chatContextAttachmentsRef.current, ...chatAttachmentsRef.current].filter((attachment) => attachment.status === "ready").flatMap((attachment) => attachment.statement?.transactions || []);
         if (!incoming.length) throw new Error("Attach at least one file with transactions first.");
         const signature = (transaction: Transaction) => `${transaction.date}|${transaction.merchant.toLowerCase()}|${transaction.type}|${transaction.amount}`;
         const known = new Set(statement.transactions.map(signature));
@@ -855,7 +889,8 @@ export default function Home() {
     }
     setActiveChatId(null);
     setChatMessages([]);
-    setChatAttachments([]);
+    chatAttachmentsRef.current = []; setChatAttachments([]);
+    chatContextAttachmentsRef.current = []; setChatContextAttachments([]);
     setQuestion("");
   }
 
@@ -863,7 +898,8 @@ export default function Home() {
     if (asking) return;
     setActiveChatId(chat.id);
     setChatMessages(chat.messages);
-    setChatAttachments([]);
+    chatAttachmentsRef.current = []; setChatAttachments([]);
+    chatContextAttachmentsRef.current = []; setChatContextAttachments([]);
     setQuestion("");
   }
 
@@ -874,6 +910,8 @@ export default function Home() {
     if (activeChatId === chat.id) {
       setActiveChatId(remaining[0]?.id || null);
       setChatMessages(remaining[0]?.messages || []);
+      chatAttachmentsRef.current = []; setChatAttachments([]);
+      chatContextAttachmentsRef.current = []; setChatContextAttachments([]);
     }
     try {
       const response = await fetch(`/api/chats?id=${encodeURIComponent(chat.id)}`, { method: "DELETE" });
@@ -1016,7 +1054,7 @@ export default function Home() {
 
         {view === "reports" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ReportsPage frequency={reportFrequency} enabled={weeklyEmailEnabled} timezone={reportTimezone} period={reportFrequency === "weekly" ? `${week.start} — ${week.end}` : activePeriod} outflow={reportFrequency === "weekly" ? weeklyReportOutflow : reportOutflow} consumption={reportFrequency === "weekly" ? weeklyReportOutflow - weeklyReportTransfers : summary.spend} transfers={reportFrequency === "weekly" ? weeklyReportTransfers : summary.transfers} topCategory={(reportFrequency === "weekly" ? weeklyTopCategory : reportTopCategory)?.[0] || "None"} topMerchant={(reportFrequency === "weekly" ? weeklyTopMerchant : reportTopMerchant)?.[0] || "None"} largest={reportFrequency === "weekly" ? (weeklyLargest ? `${weeklyLargest.merchant} · ${money(weeklyLargest.amount)}` : "None") : (reportLargest ? `${reportLargest.merchant} · ${money(reportLargest.amount)}` : "None")} healthScore={health.score} healthLabel={health.label} suggestion={reportFrequency === "weekly" ? week.suggestion : (statement.insights[0] || "Keep importing transactions to receive a useful monthly suggestion.")} onFrequency={(frequency) => void chooseReportFrequency(frequency)} onTimezone={(timezone) => { setReportTimezone(timezone); if (weeklyEmailEnabled) void savePreferences(true, timezone, reportFrequency); }} onEnable={() => void enableReport()} onDisable={() => void disableReport()}/>) }
 
-        {view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ChatWorkspace messages={chatMessages} question={question} asking={asking} transactionCount={statement.transactions.length} attachments={chatAttachments} attachmentBusy={attachmentBusy} runningActionId={runningActionId} onQuestion={setQuestion} onAsk={askAgent} onAttach={(files) => void handleChatFiles(files)} onRemoveAttachment={(id) => setChatAttachments((current) => current.filter((attachment) => attachment.id !== id))} onRunAction={(messageId, action) => void runAgentAction(messageId, action)} endRef={chatEndRef}/>)}
+        {view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <ChatWorkspace messages={chatMessages} question={question} asking={asking} transactionCount={statement.transactions.length} attachments={chatAttachments} contextAttachments={chatContextAttachments} attachmentBusy={attachmentBusy} runningActionId={runningActionId} onQuestion={setQuestion} onAsk={askAgent} onAttach={(files) => void handleChatFiles(files)} onRemoveAttachment={(id) => { chatAttachmentsRef.current = chatAttachmentsRef.current.filter((attachment) => attachment.id !== id); setChatAttachments(chatAttachmentsRef.current); }} onRunAction={(messageId, action) => void runAgentAction(messageId, action)} endRef={chatEndRef}/>)}
 
         {false && view === "agent" && (sessionPending || accountLoading ? <WorkspaceSkeleton/> : !session?.user ? <EmptyWorkspace signedIn={false} uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : !hasData ? <EmptyWorkspace signedIn uploading={uploading} uploadLabel={uploadLabel} onSignIn={() => signIn.social({ provider: "google", callbackURL: "/dashboard" })} onUpload={() => fileRef.current?.click()}/> : <section className="agent-page">
           <div className="agent-copy"><p className="eyebrow"><span className="live-dot"/>YOUR FINANCIAL COPILOT</p><h1>Ask your money<br/>a real question.</h1><p>Finora gives your agent a clean financial memory through MCP — not a screenshot, not a vague guess.</p><div className="agent-proof"><span><Check size={14}/>Reads your corrected categories</span><span><Check size={14}/>Answers from transaction evidence</span><span><Check size={14}/>Works inside Codex</span></div></div>

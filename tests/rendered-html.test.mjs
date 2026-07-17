@@ -8,6 +8,7 @@ test("build contains the Finora product experience", async () => {
   const askRoute = await readFile(new URL("../app/api/ask/route.ts", import.meta.url), "utf8");
   const sheetRoute = await readFile(new URL("../app/api/sheets/route.ts", import.meta.url), "utf8");
   const actions = await readFile(new URL("../lib/agent-actions.ts", import.meta.url), "utf8");
+  const analyst = await readFile(new URL("../lib/analyst.ts", import.meta.url), "utf8");
   const page = `${landing}\n${dashboard}`;
   const assetsDirectory = new URL("../dist/client/assets/", import.meta.url);
   const assets = await readdir(assetsDirectory);
@@ -23,6 +24,7 @@ test("build contains the Finora product experience", async () => {
   assert.doesNotMatch(dashboard, /finora-chat-header|finora-chat-history|finora-history-new/);
   assert.match(askRoute, /buildAnalystResponse/); assert.match(askRoute, /proactive, evidence-based personal finance analyst/);
   assert.match(dashboard, /Attach financial files/); assert.match(dashboard, /multiple hidden/); assert.match(dashboard, /READY TO DO/); assert.match(dashboard, /runAgentAction/);
+  assert.match(dashboard, /chatAttachmentsRef/); assert.match(dashboard, /evidenceScope/); assert.match(askRoute, /ATTACHED FILES ONLY/); assert.match(analyst, /rollingMonths/);
   assert.match(actions, /import_attachments/); assert.match(actions, /recategorize_transactions/); assert.match(actions, /append_sheet_rows/); assert.match(actions, /update_sheet_range/); assert.match(actions, /schedule_report/);
   assert.match(sheetRoute, /addTab/); assert.match(sheetRoute, /deleteTab/); assert.match(sheetRoute, /appendRows/); assert.match(sheetRoute, /updateRange/); assert.match(sheetRoute, /clearRange/);
   assert.doesNotMatch(dashboard, /Finding transactions with/);

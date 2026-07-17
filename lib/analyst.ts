@@ -113,6 +113,13 @@ function scopedTransactions(question: string, transactions: Transaction[]) {
   const monthIndex = monthNames.findIndex((month) => lower.includes(month));
 
   if (/\b(all time|overall|ever|every transaction|entire ledger)\b/.test(lower)) return { items: transactions, label: "All imported transactions", period: "all" };
+  const rollingMonths = lower.match(/\b(?:last|past|in|over|across)\s+(\d{1,2})\s+months?\b/);
+  if (rollingMonths) {
+    const count = Math.max(1, Math.min(24, Number(rollingMonths[1])));
+    const selected = periods.slice(-count);
+    const first = selected[0], last = selected.at(-1);
+    return { items: transactions.filter((transaction) => selected.includes(periodKey(transaction.date))), label: first && last ? `${monthLabel(first)} â€“ ${monthLabel(last)}` : `Last ${count} months`, period: "rolling" };
+  }
   if (/\b(this year|year to date|ytd|last year)\b/.test(lower) || explicitYear) {
     const ledgerYear = Number(latest.slice(0, 4));
     const year = explicitYear ? Number(explicitYear) : /last year/.test(lower) ? ledgerYear - 1 : ledgerYear;
@@ -182,7 +189,7 @@ export function buildAnalystResponse(question: string, transactions: Transaction
   const totals = summarize(scoped.items);
   const focusCategory = detectCategory(question);
   const focusMerchant = detectMerchant(question, transactions);
-  const comparison = compareMonths(transactions, scoped.period === "all" || scoped.period === "week" || scoped.period.length === 4 ? latestPeriod(transactions) : scoped.period);
+  const comparison = compareMonths(transactions, scoped.period === "all" || scoped.period === "week" || scoped.period === "rolling" || scoped.period.length === 4 ? latestPeriod(transactions) : scoped.period);
 
   if (/subscription|recurring/.test(lower)) {
     const subscriptions = detectSubscriptions(transactions);

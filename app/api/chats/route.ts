@@ -5,7 +5,7 @@ import { chatThread } from "../../../db/schema";
 import { sanitizeAnalystResponse, type AnalystResponse } from "../../../lib/analyst";
 import { sanitizeAgentActions, type AgentAction, type ChatAttachmentMeta } from "../../../lib/agent-actions";
 
-type StoredMessage = { id: string; role: "user" | "assistant"; content: string; analysis?: AnalystResponse; actions?: AgentAction[]; attachments?: ChatAttachmentMeta[] };
+type StoredMessage = { id: string; role: "user" | "assistant"; content: string; analysis?: AnalystResponse; actions?: AgentAction[]; attachments?: ChatAttachmentMeta[]; evidenceScope?: "attachments" | "combined" | "ledger" };
 
 function cleanAttachments(input: unknown): ChatAttachmentMeta[] {
   if (!Array.isArray(input)) return [];
@@ -37,6 +37,7 @@ function cleanMessages(input: unknown): StoredMessage[] | null {
       ...(item.analysis ? { analysis: sanitizeAnalystResponse(item.analysis) } : {}),
       ...(item.actions ? { actions: sanitizeAgentActions(item.actions) } : {}),
       ...(item.attachments ? { attachments: cleanAttachments(item.attachments) } : {}),
+      ...(item.evidenceScope === "attachments" || item.evidenceScope === "combined" || item.evidenceScope === "ledger" ? { evidenceScope: item.evidenceScope } : {}),
     }));
   return messages.length === input.length ? messages : null;
 }
