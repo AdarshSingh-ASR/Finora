@@ -9,6 +9,8 @@ test("build contains the Finora product experience", async () => {
   const askRoute = await readFile(new URL("../app/api/ask/route.ts", import.meta.url), "utf8");
   const chatsRoute = await readFile(new URL("../app/api/chats/route.ts", import.meta.url), "utf8");
   const sheetRoute = await readFile(new URL("../app/api/sheets/route.ts", import.meta.url), "utf8");
+  const agentRoute = await readFile(new URL("../app/api/agent/route.ts", import.meta.url), "utf8");
+  const statementParser = await readFile(new URL("../lib/statement-parser.ts", import.meta.url), "utf8");
   const actions = await readFile(new URL("../lib/agent-actions.ts", import.meta.url), "utf8");
   const analyst = await readFile(new URL("../lib/analyst.ts", import.meta.url), "utf8");
   const page = `${landing}\n${dashboard}`;
@@ -34,6 +36,7 @@ test("build contains the Finora product experience", async () => {
   assert.match(sheetRoute, /statementOverride/); assert.match(askRoute, /every follow-up pronoun/); assert.match(actions, /Write the .*attached file/);
   assert.match(actions, /open_sheet/); assert.match(actions, /import_attachments/); assert.match(actions, /recategorize_transactions/); assert.match(actions, /append_sheet_rows/); assert.match(actions, /update_sheet_range/); assert.match(actions, /schedule_report/);
   assert.match(sheetRoute, /addTab/); assert.match(sheetRoute, /deleteTab/); assert.match(sheetRoute, /appendRows/); assert.match(sheetRoute, /updateRange/); assert.match(sheetRoute, /clearRange/);
+  assert.match(agentRoute, /processStatementInput/); assert.match(agentRoute, /answerWithFinora/); assert.match(statementParser, /parseCsvFallback/); assert.doesNotMatch(agentRoute, /fetch\(new URL\("\/api\/(?:categorize|ask)"/);
   assert.doesNotMatch(dashboard, /Finding transactions with/);
   assert.doesNotMatch(page, /sampleStatement|defaultBudgets|codex-preview|Your site is taking shape|react-loading-skeleton/);
 });

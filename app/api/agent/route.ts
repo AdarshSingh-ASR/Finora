@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { POST as answerWithFinora } from "../ask/route";
 import { getDb } from "../../../db";
 import { account, reportPreference, userLedger } from "../../../db/schema";
 import { agentIdentity } from "../../../lib/agent-auth";
@@ -10,6 +11,7 @@ import {
   connectSpreadsheet, copySpreadsheet, createSpreadsheet, disconnectSpreadsheet, getSheetConnection,
   GoogleWorkspaceError, moveSpreadsheet, renameSpreadsheet, shareSpreadsheet, syncSpreadsheet,
 } from "../../../lib/google-sheets";
+import { processStatementInput } from "../../../lib/statement-parser";
 import type { Budget, StatementResult } from "../../../lib/types";
 
 export const runtime = "edge";
@@ -71,9 +73,7 @@ export async function POST(request: Request) {
       return Response.json({ connected: true, transactionCount: transactions.length, periods: monthlySummaries(transactions).map((item) => item.period), sheet, reportPreference: preference });
     }
     if (action === "import_statement") {
-      const parsedResponse = await fetch(new URL("/api/categorize", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: body.filename, mimeType: body.mimeType, fileData: body.fileData, text: body.text }) });
-      const parsed = await parsedResponse.json() as StatementResult & { error?: string };
-      if (!parsedResponse.ok) return Response.json({ error: parsed.error || "Statement parsing failed." }, { status: parsedResponse.status });
+      const parsed = await processStatementInput({ filename: String(body.filename || "statement"), mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined, fileData: typeof body.fileData === "string" ? body.fileData : undefined, text: typeof body.text === "string" ? body.text : undefined });
       const replace = body.replace === true;
       const mergedTransactions = !replace && statement ? [...statement.transactions, ...parsed.transactions].filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id || (candidate.date === item.date && candidate.amount === item.amount && candidate.description === item.description)) === index) : parsed.transactions;
       const saved = { ...parsed, transactions: mergedTransactions, provider: undefined, model: undefined } as StatementResult;
@@ -85,6 +85,7 @@ export async function POST(request: Request) {
       await saveLedger(identity.userId, body.statement as StatementResult, Array.isArray(body.budgets) ? body.budgets as Budget[] : budgets);
       return Response.json({ ok: true });
     }
+    if (action === "sheet_status") return Response.json({ connection: await getSheetConnection(identity.userId) });
     if (!statement) return Response.json({ error: "Import a statement before using this action.", code: "LEDGER_REQUIRED" }, { status: 409 });
     if (action === "list_transactions" || action === "categorize_transactions") return Response.json({ transactions, count: transactions.length });
     if (action === "normalize_merchants") {
@@ -123,10 +124,8 @@ export async function POST(request: Request) {
     }
     if (action === "answer_finance_question") {
       const question = String(body.question || "").trim();
-      const aiResponse = await fetch(new URL("/api/ask", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, history: body.history, transactions, budgets }) });
-      return new Response(await aiResponse.text(), { status: aiResponse.status, headers: { "Content-Type": "application/json" } });
+      return answerWithFinora(new Request(request.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, history: body.history, transactions, budgets }) }));
     }
-    if (action === "sheet_status") return Response.json({ connection: await getSheetConnection(identity.userId) });
     if (action === "sync_sheets") {
       const connection = await getSheetConnection(identity.userId);
       return Response.json({ connection: connection ? await syncSpreadsheet(identity.userId) : await createSpreadsheet(identity.userId, body.name) });

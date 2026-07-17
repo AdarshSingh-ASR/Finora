@@ -16,6 +16,16 @@ async function saveConfig(config) {
   try { await chmod(configPath, 0o600); } catch {}
 }
 function output(value) { process.stdout.write(`${JSON.stringify(value, null, 2)}\n`); }
+async function parsePayload(parts) {
+  if (!parts.length) return {};
+  if (parts.length === 1 && parts[0].startsWith("@")) return JSON.parse((await readFile(resolve(parts[0].slice(1)), "utf8")).replace(/^\uFEFF/, ""));
+  if (parts.every((part) => part.includes("="))) return Object.fromEntries(parts.map((part) => {
+    const separator = part.indexOf("="); const key = part.slice(0, separator); const raw = part.slice(separator + 1);
+    let value; try { value = JSON.parse(raw); } catch { value = raw; }
+    return [key, value];
+  }));
+  return JSON.parse(parts.join(" "));
+}
 async function request(path, config, init = {}) {
   const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}${path}`, {
     ...init,
@@ -62,8 +72,8 @@ try {
   } else if (command === "skill-sync") {
     output(await authenticated(config, "/api/agent", { method: "POST", body: JSON.stringify({ action: "skill_sync" }) }));
   } else if (command === "call") {
-    const action = args[0]; if (!action) throw new Error("Usage: finora.mjs call <action> [json]");
-    const payload = args[1] ? JSON.parse(args.slice(1).join(" ")) : {};
+    const action = args[0]; if (!action) throw new Error("Usage: finora.mjs call <action> [key=value ... | json | @payload.json]");
+    const payload = await parsePayload(args.slice(1));
     output(await authenticated(config, "/api/agent", { method: "POST", body: JSON.stringify({ action, ...payload }) }));
   } else if (command === "ask") {
     const question = args.join(" ").trim(); if (!question) throw new Error("Usage: finora.mjs ask <question>");

@@ -2,6 +2,8 @@
 
 The bundled client calls `POST /api/agent` with a bearer token and `{ "action": "..." }`. Prefer the client script so secrets remain out of the conversation.
 
+Pass simple payloads as cross-platform `key=value` arguments, for example `call search_transactions query=Amazon`. For nested objects or arrays, write JSON to a temporary file and pass `@payload.json`. Inline JSON remains supported where shell quoting preserves it.
+
 ## Read actions
 
 | Action | Optional fields | Result |

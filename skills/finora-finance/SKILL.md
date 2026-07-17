@@ -28,10 +28,10 @@ Use the smallest matching backend action. Read [references/api.md](references/ap
 - Account/ledger readiness: `skill-sync`.
 - Totals or category breakdown: `call summary`.
 - Monthly history or trend: `call monthly_summary`.
-- Period comparison: `call compare_months '{"current":"YYYY-MM","previous":"YYYY-MM"}'`.
-- Merchant/category/date search: `call search_transactions '{"query":"Amazon"}'`.
-- User category correction: `call correct_category '{"transactionId":"...","category":"Travel"}'`.
-- Budget changes: `call set_budgets '{"budgets":[{"category":"Food & Dining","limit":8000}]}'`.
+- Period comparison: `call compare_months current=YYYY-MM previous=YYYY-MM`.
+- Merchant/category/date search: `call search_transactions query=Amazon`.
+- User category correction: `call correct_category transactionId=... category=Travel`.
+- Budget changes: put the payload in a temporary JSON file and run `call set_budgets @payload.json`.
 - Recurring charges: `call detect_subscriptions`.
 - Possible duplicates: `call find_duplicates`.
 - Unusual activity: `call detect_anomalies`.

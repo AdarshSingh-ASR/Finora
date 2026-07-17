@@ -22,8 +22,10 @@ const baseUrl = process.argv[2];
 if (baseUrl) {
   const checked = new URL(baseUrl).origin;
   const configDir = process.env.FINORA_CONFIG_DIR || join(homedir(), ".finora");
+  let existing = {};
+  try { existing = JSON.parse((await readFile(join(configDir, "agent-skill.json"), "utf8")).replace(/^\uFEFF/, "")); } catch {}
   await mkdir(configDir, { recursive: true });
-  await writeFile(join(configDir, "agent-skill.json"), `${JSON.stringify({ baseUrl: checked }, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(join(configDir, "agent-skill.json"), `${JSON.stringify({ ...existing, baseUrl: checked }, null, 2)}\n`, { mode: 0o600 });
 }
 
 process.stdout.write(`Installed Finora Finance skill:\n- Codex: ${codexTarget}\n- Agent Skills: ${agentTarget}\n- Claude command: ${join(claudeCommands, "finance.md")}\n${baseUrl ? `- Server: ${new URL(baseUrl).origin}\n` : ""}`);
