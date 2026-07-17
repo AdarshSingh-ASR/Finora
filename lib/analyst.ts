@@ -15,6 +15,7 @@ import {
   monthlySummaries,
   normalizeMerchant,
   periodKey,
+  refineTransactionsForAnalysis,
   suggestBudgets,
   summarize,
 } from "./finance";
@@ -55,6 +56,11 @@ const categoryAliases: Array<[Category, RegExp]> = [
   ["Transport", /\b(transport|commute|uber|ola|rapido|metro|fuel|petrol)\b/i],
   ["Shopping", /\b(shopping|amazon|flipkart|myntra|ajio|retail)\b/i],
   ["Bills & Utilities", /\b(bill|bills|utilities|utility|electricity|internet|broadband|water|gas)\b/i],
+  ["Education", /\b(education|school|college|university|tuition|course|exam fee)\b/i],
+  ["Insurance", /\b(insurance|premium|policy)\b/i],
+  ["Personal Care", /\b(personal care|salon|spa|beauty|grooming)\b/i],
+  ["Taxes & Fees", /\b(tax|taxes|bank charge|service charge|penalty|government fee)\b/i],
+  ["Gifts & Donations", /\b(gift|gifts|donation|charity)\b/i],
   ["Health", /\b(health|healthcare|medical|pharmacy|hospital|doctor|gym)\b/i],
   ["Entertainment", /\b(entertainment|streaming|movie|movies|netflix|spotify|hotstar|prime)\b/i],
   ["Travel", /\b(travel|trip|flight|flights|hotel|hotels|airline)\b/i],
@@ -189,6 +195,7 @@ function genericInsights(transactions: Transaction[], scoped: Transaction[], com
 }
 
 export function buildAnalystResponse(question: string, transactions: Transaction[], budgets: Budget[] = []): AnalystResponse {
+  transactions = refineTransactionsForAnalysis(transactions);
   const lower = question.toLowerCase();
   const scoped = scopedTransactions(question, transactions);
   const debits = scoped.items.filter((transaction) => transaction.type === "debit");
@@ -344,13 +351,29 @@ export function buildAnalystResponse(question: string, transactions: Transaction
     const categories = change.categoryDrivers as Array<{ category: string; current: number; previous: number; difference: number; changePercent: number | null }>;
     const merchants = change.merchantDrivers as Array<{ merchant: string; current: number; previous: number; difference: number }>;
     const changePercent = change.consumptionChangePercent as number | null;
+    const leadingCategories = categories.slice(0, 3);
+    const driverSummary = leadingCategories.map((item) => `${item.category} ${item.difference >= 0 ? "rose" : "fell"} by ${money(Math.abs(item.difference))}`).join(", ");
+    const currentItems = inPeriod(transactions, String(change.current));
+    const recurring = detectSubscriptions(transactions).filter((item) => currentItems.some((transaction) => normalizeMerchant(transaction.merchant || transaction.description) === item.merchant));
+    const notable = [...currentItems.filter((item) => item.type === "debit")].sort((a, b) => b.amount - a.amount)[0];
+    const insights: AnalystInsight[] = leadingCategories.map((item) => {
+      const categoryItems = currentItems.filter((transaction) => transaction.type === "debit" && transaction.category === item.category);
+      const topMerchants = sortedTotals(categoryItems, (transaction) => normalizeMerchant(transaction.merchant || transaction.description)).slice(0, 2);
+      const merchantDetail = topMerchants.length ? ` Led by ${topMerchants.map((merchant) => `${merchant.label} (${money(merchant.amount)})`).join(" and ")}.` : "";
+      return { title: `${item.category} ${item.difference >= 0 ? "increased" : "decreased"}`, detail: `${money(item.current)} now versus ${money(item.previous)} previously.${merchantDetail}`, tone: item.difference > 0 ? "warning" : "positive" };
+    });
+    if (recurring[0]) insights.push({ title: `${recurring[0].merchant} is recurring`, detail: `About ${money(recurring[0].monthlyCost)} per month across ${recurring[0].occurrences} observed payment${recurring[0].occurrences === 1 ? "" : "s"}.`, tone: "neutral" });
+    else if (notable) insights.push({ title: "Largest notable transaction", detail: `${normalizeMerchant(notable.merchant || notable.description)} was ${money(notable.amount)} on ${new Date(notable.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}, categorized as ${notable.category}.`, tone: "neutral" });
     return {
       kind: "comparison", title: "What changed", scope: `${String(change.previous || "Prior period")} to ${String(change.current || "Latest period")}`,
-      directAnswer: changePercent == null ? "There is not enough prior consumption to calculate a percentage change." : `Consumption was ${Math.abs(changePercent).toFixed(0)}% ${changePercent >= 0 ? "higher" : "lower"} than the previous period.`,
+      directAnswer: changePercent == null ? "There is not enough prior consumption to calculate a percentage change." : `Consumption was ${Math.abs(changePercent).toFixed(0)}% ${changePercent >= 0 ? "higher" : "lower"} than the previous period.${driverSummary ? ` The largest category movements were: ${driverSummary}.` : ""}`,
       metrics: categories.slice(0, 4).map((item) => ({ label: item.category, value: `${item.difference >= 0 ? "+" : ""}${money(item.difference)}`, detail: `${money(item.current)} now vs ${money(item.previous)}`, tone: item.difference > 0 ? "warning" : "positive" })),
       chart: chart("Largest category drivers", "bar", "currency", categories.slice(0, 8).map((item) => ({ label: item.category, value: Math.abs(item.difference), detail: `${item.difference >= 0 ? "Increase" : "Decrease"} of ${money(Math.abs(item.difference))}` }))),
-      table: merchants.length ? { title: "Merchant drivers", columns: ["Merchant", "Current", "Previous", "Difference"], rows: merchants.slice(0, 8).map((item) => [item.merchant, money(item.current), money(item.previous), `${item.difference >= 0 ? "+" : ""}${money(item.difference)}`]) } : undefined,
-      insights: categories.slice(0, 3).map((item) => ({ title: `${item.category} ${item.difference >= 0 ? "increased" : "decreased"}`, detail: `${money(item.current)} versus ${money(item.previous)} previously.`, tone: item.difference > 0 ? "warning" : "positive" })),
+      table: merchants.length ? { title: "Merchant drivers", columns: ["Merchant", "Category", "Current", "Previous", "Difference"], rows: merchants.slice(0, 8).map((item) => {
+        const category = transactions.find((transaction) => normalizeMerchant(transaction.merchant || transaction.description) === item.merchant)?.category || "Needs review";
+        return [item.merchant, category, money(item.current), money(item.previous), `${item.difference >= 0 ? "+" : ""}${money(item.difference)}`];
+      }) } : undefined,
+      insights: insights.slice(0, 4),
       followUps: ["Which merchants cost me the most?", "Show spending by category", "Find unusual transactions", "Predict my month-end spending"],
     };
   }

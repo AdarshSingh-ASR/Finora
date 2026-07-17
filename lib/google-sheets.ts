@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { googleSheetConnection, userLedger } from "../db/schema";
 import { getAuth } from "./auth";
-import { analyzeFinances, buildCashFlow, buildFinancialTimeline, detectSubscriptions, findSavingsOpportunities, monthlySummaries, normalizeMerchant, predictMonthEndSpending } from "./finance";
+import { analyzeFinances, buildCashFlow, buildFinancialTimeline, detectSubscriptions, findSavingsOpportunities, monthlySummaries, normalizeMerchant, predictMonthEndSpending, refineTransactionsForAnalysis } from "./finance";
 import { planTransactionSheetSync, TRANSACTION_HEADER, transactionSheetRow } from "./sheet-sync-plan.mjs";
 import type { StatementResult, Transaction } from "./types";
 
@@ -60,23 +60,32 @@ function groupedRows(transactions: Transaction[], keyFor: (transaction: Transact
 }
 
 function workbookValues(statement: StatementResult) {
-  const intelligence = analyzeFinances(statement.transactions, []);
-  const timeline = buildFinancialTimeline(statement.transactions, [], 6);
-  const forecast = predictMonthEndSpending(statement.transactions);
-  const savings = findSavingsOpportunities(statement.transactions);
-  const transactions = [TRANSACTION_HEADER, ...statement.transactions.map(transactionSheetRow)];
-  const monthly = [["Period", "Income", "Consumption", "Transfers & investments", "Net cash flow", "Savings rate", "Transfers", "Investment contributions"], ...monthlySummaries(statement.transactions).map((item) => {
-    const cashFlow = buildCashFlow(statement.transactions, item.period);
+  const refinedTransactions = refineTransactionsForAnalysis(statement.transactions);
+  const intelligence = analyzeFinances(refinedTransactions, []);
+  const timeline = buildFinancialTimeline(refinedTransactions, [], 6);
+  const forecast = predictMonthEndSpending(refinedTransactions);
+  const savings = findSavingsOpportunities(refinedTransactions);
+  const transactions = [TRANSACTION_HEADER, ...refinedTransactions.map(transactionSheetRow)];
+  const monthly = [["Period", "Income", "Consumption", "Transfers & investments", "Net cash flow", "Savings rate", "Transfers", "Investment contributions"], ...monthlySummaries(refinedTransactions).map((item) => {
+    const cashFlow = buildCashFlow(refinedTransactions, item.period);
     return [item.period, item.income, item.spend, item.transfers, item.saved, Math.round(item.savingsRate * 100) / 100, cashFlow.transfers, cashFlow.investmentContributions];
   })];
-  const categories = [["Category", "Amount", "Transactions"], ...groupedRows(statement.transactions, (transaction) => transaction.category)];
-  const merchants = [["Merchant", "Amount", "Transactions"], ...groupedRows(statement.transactions, (transaction) => normalizeMerchant(transaction.merchant || transaction.description))];
-  const subscriptions = [["Merchant", "Monthly cost", "Annual cost", "Occurrences", "Estimated renewal", "Confidence"], ...detectSubscriptions(statement.transactions).map((item) => [
+  const categories = [["Category", "Amount", "Transactions"], ...groupedRows(refinedTransactions.filter((transaction) => !["Transfers", "Investment"].includes(transaction.category)), (transaction) => transaction.category)];
+  const merchants = [["Merchant", "Amount", "Transactions"], ...groupedRows(refinedTransactions.filter((transaction) => !["Transfers", "Investment"].includes(transaction.category)), (transaction) => normalizeMerchant(transaction.merchant || transaction.description))];
+  const detectedSubscriptions = detectSubscriptions(refinedTransactions);
+  const subscriptions = [["Merchant", "Monthly cost", "Annual cost", "Occurrences", "Estimated renewal", "Confidence"], ...detectedSubscriptions.map((item) => [
     item.merchant, item.monthlyCost, item.annualCost, item.occurrences, item.estimatedRenewalDate, Math.round(item.confidence * 100) / 100,
   ])];
-  const insights = [["Finora insight"], ...(statement.insights.length ? statement.insights : ["Import more transactions to generate grounded insights."]).map((insight) => [insight])];
+  const groundedInsights = [
+    intelligence.byCategory[0] ? `${intelligence.byCategory[0].category} is the largest consumption area at ${intelligence.byCategory[0].amount.toFixed(0)}, representing ${intelligence.byCategory[0].share.toFixed(1)}% of consumption.` : "No consumption spending was detected in the selected period.",
+    intelligence.topMerchants[0] ? `${intelligence.topMerchants[0].merchant} is the leading consumption merchant at ${intelligence.topMerchants[0].amount.toFixed(0)} across ${intelligence.topMerchants[0].count} payment(s).` : "No consumption merchant was available for ranking.",
+    detectedSubscriptions.length ? `${detectedSubscriptions.length} recurring expense(s) total about ${detectedSubscriptions.reduce((total, item) => total + item.monthlyCost, 0).toFixed(0)} per month; the largest is ${detectedSubscriptions[0].merchant}.` : "No reliable recurring expense cadence was detected yet.",
+    intelligence.largestTransaction ? `Notable outflow: ${normalizeMerchant(intelligence.largestTransaction.merchant || intelligence.largestTransaction.description)} at ${intelligence.largestTransaction.amount.toFixed(0)} on ${intelligence.largestTransaction.date.slice(0, 10)} (${intelligence.largestTransaction.category}).` : "No notable outflow was detected.",
+    ...intelligence.anomalies.slice(0, 2).map((item) => `${item.title}: ${item.detail}`),
+  ];
+  const insights = [["Finora insight"], ...groundedInsights.map((insight) => [insight])];
   const cashFlow = [["Metric", "Value", "Period"], ["Income", intelligence.cashFlow.income, intelligence.period], ["Consumption", intelligence.cashFlow.consumption, intelligence.period], ["Transfers", intelligence.cashFlow.transfers, intelligence.period], ["Investment contributions", intelligence.cashFlow.investmentContributions, intelligence.period], ["Total outflow", intelligence.cashFlow.totalOutflow, intelligence.period], ["Net cash flow", intelligence.cashFlow.netCashFlow, intelligence.period], ["Savings rate", Math.round(intelligence.cashFlow.savingsRate * 100) / 100, intelligence.period]];
-  const classes = [["Classification", "Amount", "Share of consumption"], ...Object.entries({ Fixed: intelligence.classificationTotals.fixed, Variable: intelligence.classificationTotals.variable, Essential: intelligence.classificationTotals.essential, Discretionary: intelligence.classificationTotals.discretionary, "Context-dependent": intelligence.classificationTotals.neutral }).map(([label, amount]) => [label, amount, intelligence.cashFlow.consumption ? Math.round(amount / intelligence.cashFlow.consumption * 10000) / 100 : 0]), ["Subscriptions", detectSubscriptions(statement.transactions).reduce((total, item) => total + item.monthlyCost, 0), Math.round(intelligence.classificationTotals.subscriptionShare * 100) / 100]];
+  const classes = [["Classification", "Amount", "Share of consumption"], ...Object.entries({ Fixed: intelligence.classificationTotals.fixed, Variable: intelligence.classificationTotals.variable, Essential: intelligence.classificationTotals.essential, Discretionary: intelligence.classificationTotals.discretionary, "Context-dependent": intelligence.classificationTotals.neutral }).map(([label, amount]) => [label, amount, intelligence.cashFlow.consumption ? Math.round(amount / intelligence.cashFlow.consumption * 10000) / 100 : 0]), ["Subscriptions", detectedSubscriptions.reduce((total, item) => total + item.monthlyCost, 0), Math.round(intelligence.classificationTotals.subscriptionShare * 100) / 100]];
   const timelineRows = [["Period", "Event", "Detail", "Type", "Significance", "Amount", "Change percent"], ...timeline.map((item) => [item.period, item.title, item.detail, item.type, item.significance, item.amount || "", item.changePercent == null ? "" : Math.round(item.changePercent * 100) / 100])];
   const forecastRows = [["Month-end forecast", "Value", "Detail"], ["Period", forecast.period, forecast.asOfDate], ["Actual consumption", forecast.actualConsumption, "Observed so far"], ["Projected consumption", forecast.projectedConsumption, `${forecast.confidence} confidence`], ["Projected total outflow", forecast.projectedTotalOutflow, "Includes transfers and investments"], ["Projected net cash flow", forecast.projectedNetCashFlow, forecast.explanation], ["Recurring still expected", forecast.recurringStillExpected, "Included in projection"], [], ["Savings opportunity", "Monthly potential", "Evidence"], ...savings.map((item) => [item.title, item.monthlyPotential, item.detail])];
   return { Transactions: transactions, "Monthly Summary": monthly, "Category Summary": categories, "Merchant Summary": merchants, Subscriptions: subscriptions, Insights: insights, "Cash Flow": cashFlow, "Spending Classes": classes, "Financial Timeline": timelineRows, "Forecast & Savings": forecastRows, Charts: [["Finora charts"], ["Charts refresh whenever you sync this workbook."]] };
@@ -128,7 +137,7 @@ async function writeWorkbook(accessToken: string, spreadsheetId: string, stateme
 
   const transactionsSheet = byTitle.get("Transactions");
   if (!transactionsSheet) throw new GoogleWorkspaceError("The Transactions sheet could not be created.", 502);
-  await syncTransactionSheet(accessToken, spreadsheetId, transactionsSheet.properties.sheetId, statement.transactions);
+  await syncTransactionSheet(accessToken, spreadsheetId, transactionsSheet.properties.sheetId, refineTransactionsForAnalysis(statement.transactions));
 
   await googleRequest(accessToken, `${SHEETS_API}/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchClear`, {
     method: "POST", body: JSON.stringify({ ranges: SHEET_TITLES.filter((title) => title !== "Transactions").map((title) => `'${title}'`) }),

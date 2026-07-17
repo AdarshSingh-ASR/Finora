@@ -54,6 +54,7 @@ Prefer the highest-level outcome action that matches the user's goal. Use low-le
 
 - Treat parsing, imports, ledger replacement, report changes, and Sheets sync as writes. Confirm before a destructive replacement, tab/range deletion, workbook deletion, sharing, or scheduled email change. An explicit user request to do the action counts as confirmation.
 - Include person-to-person transfers and investments by default. Label and subtotal them separately; exclude them only if the user explicitly asks.
+- Prefer specific evidence-supported categories and normalized merchant names. Use `Miscellaneous` only when the narration, merchant, amount direction, and recurrence provide no reasonable classification. Supported categories include Food & Dining, Housing, Transport, Shopping, Bills & Utilities, Education, Insurance, Personal Care, Taxes & Fees, Gifts & Donations, EMI, Investment, Health, Entertainment, Travel, Salary, Income, Transfers, Miscellaneous, and Other.
 - Preserve uncertainty and confidence. Describe duplicates and anomalies as possible findings, not facts.
 - Lead with the direct answer. Add supporting merchants, categories, comparisons, anomalies, forecast or budget implications only when they materially help. Use returned bar, line, donut, table, or timeline data instead of inventing a visualization. Use a trusted Finora HTML report for a financial review or dashboard, never model-authored arbitrary HTML.
 - Offer two to four contextual next questions after a rich analysis. Do not turn a simple lookup into a long report.

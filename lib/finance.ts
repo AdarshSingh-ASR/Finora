@@ -1,4 +1,5 @@
 import type { Budget, Category, DuplicateMatch, SpendingAnomaly, StatementResult, Subscription, Transaction } from "./types";
+import { categoryValues, classifyNarration, normalizeMerchantName, refineTransaction, refineTransactionsForAnalysis, transactionDetail } from "./transaction-classifier.mjs";
 
 export {
   analyzeFinances,
@@ -15,30 +16,15 @@ export {
   suggestBudgets,
 } from "./finance-intelligence.mjs";
 
-export const categories: Category[] = [
-  "Food & Dining", "Housing", "Transport", "Shopping", "Bills & Utilities",
-  "EMI", "Investment", "Health", "Entertainment", "Travel", "Salary",
-  "Income", "Transfers", "Miscellaneous", "Other",
-];
+export const categories: Category[] = categoryValues;
+export { classifyNarration, refineTransaction, refineTransactionsForAnalysis, transactionDetail };
 
 export function money(value: number, currency = "INR") {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 0 }).format(value);
 }
 
 export function normalizeMerchant(raw: string) {
-  const value = raw.toUpperCase().replace(/\b(UPI|P2M|P2P|POS|ACH|SI|BBPS|NEFT|IMPS|TXN|REF)\b/g, " ").replace(/\b\d{6,}\b/g, " ").replace(/[\/_*\-]+/g, " ").replace(/\s+/g, " ").trim();
-  const known: [RegExp, string][] = [
-    [/AMZN|AMAZON/, "Amazon"], [/SWIGGY/, "Swiggy"], [/ZOMATO/, "Zomato"],
-    [/BLINKIT|GROFERS/, "Blinkit"], [/UBER/, "Uber"], [/OLA CABS?/, "Ola"],
-    [/NETFLIX/, "Netflix"], [/SPOTIFY/, "Spotify"], [/OPENAI|CHATGPT/, "ChatGPT"],
-    [/ANTHROPIC|CLAUDE/, "Claude"], [/GOOGLE ONE/, "Google One"], [/APPLE/, "Apple"],
-    [/CULT|CUREFIT/, "Cult.fit"], [/PRIME/, "Amazon Prime"], [/CANVA/, "Canva"],
-    [/MYNTRA/, "Myntra"], [/INDIGO/, "IndiGo"], [/RELIANCE JIO|\bJIO\b/, "Jio"],
-    [/BESCOM/, "BESCOM"], [/BLUE TOKAI/, "Blue Tokai"],
-  ];
-  const matched = known.find(([pattern]) => pattern.test(value));
-  if (matched) return matched[1];
-  return value.split(" ").filter(Boolean).slice(0, 4).map((part) => part[0] + part.slice(1).toLowerCase()).join(" ") || "Unknown merchant";
+  return normalizeMerchantName(raw);
 }
 
 export function periodKey(date: string) {
@@ -55,12 +41,13 @@ export function inPeriod(transactions: Transaction[], period = latestPeriod(tran
 }
 
 export function summarize(transactions: Transaction[]) {
-  const income = transactions.filter((t) => t.type === "credit").reduce((a, t) => a + t.amount, 0);
-  const spend = transactions.filter((t) => t.type === "debit" && !["Transfers", "Investment"].includes(t.category)).reduce((a, t) => a + t.amount, 0);
-  const transfersOnly = transactions.filter((t) => t.type === "debit" && t.category === "Transfers").reduce((a, t) => a + t.amount, 0);
-  const investmentContributions = transactions.filter((t) => t.type === "debit" && t.category === "Investment").reduce((a, t) => a + t.amount, 0);
+  const refined = refineTransactionsForAnalysis(transactions);
+  const income = refined.filter((t) => t.type === "credit" && !["Transfers", "Investment"].includes(t.category)).reduce((a, t) => a + t.amount, 0);
+  const spend = refined.filter((t) => t.type === "debit" && !["Transfers", "Investment"].includes(t.category)).reduce((a, t) => a + t.amount, 0);
+  const transfersOnly = refined.filter((t) => t.type === "debit" && t.category === "Transfers").reduce((a, t) => a + t.amount, 0);
+  const investmentContributions = refined.filter((t) => t.type === "debit" && t.category === "Investment").reduce((a, t) => a + t.amount, 0);
   const transfers = transfersOnly + investmentContributions;
-  const byCategory = transactions.filter((t) => t.type === "debit" && !["Transfers", "Investment"].includes(t.category)).reduce<Record<string, number>>((acc, t) => {
+  const byCategory = refined.filter((t) => t.type === "debit" && !["Transfers", "Investment"].includes(t.category)).reduce<Record<string, number>>((acc, t) => {
     acc[t.category] = (acc[t.category] || 0) + t.amount; return acc;
   }, {});
   const totalOutflow = spend + transfers;
@@ -87,25 +74,8 @@ export function compareMonths(transactions: Transaction[], current = latestPerio
   };
 }
 
-function guessCategory(description: string, credit: boolean): Category {
-  if (credit) return /salary|payroll/i.test(description) ? "Salary" : "Income";
-  const s = description.toLowerCase();
-  if (/emi|loan repayment|bajaj finance|home loan|car loan/.test(s)) return "EMI";
-  if (/sip|mutual fund|index fund|zerodha|groww|investment/.test(s)) return "Investment";
-  if (/swiggy|zomato|blinkit|zepto|restaurant|cafe|coffee|food|grocery/.test(s)) return "Food & Dining";
-  if (/rent|housing|maintenance/.test(s)) return "Housing";
-  if (/uber|ola|rapido|metro|fuel|petrol|irctc/.test(s)) return "Transport";
-  if (/amazon|flipkart|myntra|ajio|retail/.test(s)) return "Shopping";
-  if (/electric|bescom|airtel|jio|broadband|water|gas|bbps/.test(s)) return "Bills & Utilities";
-  if (/hospital|pharmacy|medical|cult|gym|health/.test(s)) return "Health";
-  if (/netflix|spotify|cinema|bookmyshow|hotstar|prime|canva|chatgpt|claude/.test(s)) return "Entertainment";
-  if (/airline|indigo|hotel|makemytrip|booking/.test(s)) return "Travel";
-  if (/transfer|imps|p2p/.test(s)) return "Transfers";
-  return "Miscellaneous";
-}
-
 export function detectSubscriptions(transactions: Transaction[]): Subscription[] {
-  const debits = transactions.filter((transaction) => transaction.type === "debit");
+  const debits = refineTransactionsForAnalysis(transactions).filter((transaction) => transaction.type === "debit" && !["Transfers", "Investment"].includes(transaction.category));
   const groups = debits.reduce<Record<string, Transaction[]>>((acc, transaction) => {
     const merchant = normalizeMerchant(transaction.merchant || transaction.description);
     (acc[merchant] ||= []).push(transaction); return acc;
@@ -164,12 +134,17 @@ export function financialHealthScore(transactions: Transaction[], budgets: Budge
 }
 
 export function weeklyReport(transactions: Transaction[]) {
+  transactions = refineTransactionsForAnalysis(transactions);
   const end = new Date(); const start = new Date(end); start.setDate(start.getDate() - 6); start.setHours(0, 0, 0, 0);
   const week = transactions.filter((t) => { const date = new Date(t.date); return date >= start && date <= end && t.type === "debit" && !["Transfers", "Investment"].includes(t.category); });
   const totals = summarize(week); const categories = Object.entries(totals.byCategory).sort((a, b) => b[1] - a[1]);
   const merchants = week.reduce<Record<string, number>>((acc, t) => { const merchant = normalizeMerchant(t.merchant); acc[merchant] = (acc[merchant] || 0) + t.amount; return acc; }, {});
   const topMerchant = Object.entries(merchants).sort((a, b) => b[1] - a[1])[0]; const largest = [...week].sort((a, b) => b.amount - a.amount)[0];
-  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), spent: totals.spend, topCategory: categories[0]?.[0] || "None", topCategoryAmount: categories[0]?.[1] || 0, topMerchant: topMerchant?.[0] || "None", largestExpense: largest ? { merchant: normalizeMerchant(largest.merchant), amount: largest.amount } : null, suggestion: categories[0] ? `Reducing ${categories[0][0]} by 15% would save about ${money(categories[0][1] * .15)} per week.` : "Keep importing transactions to receive a useful suggestion." };
+  const recurring = detectSubscriptions(transactions).filter((item) => week.some((transaction) => normalizeMerchant(transaction.merchant || transaction.description) === item.merchant));
+  const suggestion = categories[0]
+    ? `${categories[0][0]} led consumption at ${money(categories[0][1])}${topMerchant ? `, with ${topMerchant[0]} contributing ${money(topMerchant[1])}` : ""}.${recurring.length ? ` ${recurring.length} recurring expense${recurring.length === 1 ? " was" : "s were"} active this period.` : ""}`
+    : "No consumption spending was detected in this period; transfers and investments remain separate.";
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), spent: totals.spend, topCategory: categories[0]?.[0] || "None", topCategoryAmount: categories[0]?.[1] || 0, topMerchant: topMerchant?.[0] || "None", largestExpense: largest ? { merchant: normalizeMerchant(largest.merchant), amount: largest.amount, category: largest.category, date: largest.date } : null, recurringExpenses: recurring.slice(0, 4), suggestion };
 }
 
 export function answerFinanceQuestion(question: string, transactions: Transaction[], budgets: Budget[] = []) {
@@ -194,7 +169,8 @@ export function parseCsvFallback(text: string, filename = "statement.csv"): Stat
   if (dateIndex < 0 || descIndex < 0 || (amountIndex < 0 && debitIndex < 0 && creditIndex < 0)) return null;
   const transactions = lines.slice(1).map((line, index) => {
     const row = split(line); const clean = (v = "") => Number(v.replace(/[^0-9.-]/g, "")) || 0; const creditAmount = creditIndex >= 0 ? clean(row[creditIndex]) : 0, debitAmount = debitIndex >= 0 ? clean(row[debitIndex]) : 0; const isCredit = creditAmount > 0 || /cr|credit|deposit/.test(typeIndex >= 0 ? row[typeIndex]?.toLowerCase() : ""); const amount = amountIndex >= 0 ? Math.abs(clean(row[amountIndex])) : (creditAmount || debitAmount); const description = row[descIndex] || "Unknown transaction";
-    return { id: `import-${index + 1}`, date: row[dateIndex] || "", merchant: normalizeMerchant(description), description, amount, type: isCredit ? "credit" as const : "debit" as const, category: guessCategory(description, isCredit), confidence: .72, source: filename, explanation: "Categorized locally from the statement narration. Configure Vertex AI for model-based classification." };
+    const classified = classifyNarration({ description, type: isCredit ? "credit" : "debit" });
+    return { id: `import-${index + 1}`, date: row[dateIndex] || "", merchant: classified.merchant, description, amount, type: isCredit ? "credit" as const : "debit" as const, category: classified.category, confidence: classified.confidence, source: filename, explanation: classified.reason };
   }).filter((t) => t.amount > 0 && Boolean(t.date) && Boolean(t.description));
   if (!transactions.length) return null; const totals = summarize(inPeriod(transactions)); const top = Object.entries(totals.byCategory).sort((a, b) => b[1] - a[1])[0];
   return { accountName: "Imported account", bankName: filename, period: "Imported statement", currency: "INR", transactions, insights: [`${transactions.length} transactions were normalized from ${filename}.`, top ? `${top[0]} is your largest spend category at ${money(top[1])}.` : "No debit transactions found.", `Total outflow in the latest period is ${money(totals.spend)}.`], provider: "local" };

@@ -1,5 +1,5 @@
 import { configuredProviders, generateWithFallback } from "./ai-providers.mjs";
-import { normalizeMerchant, parseCsvFallback } from "./finance";
+import { categories, normalizeMerchant, parseCsvFallback, refineTransaction } from "./finance";
 import { generateAdaptiveStatementRange, isRecoverableStatementError } from "./statement-chunking.mjs";
 import { configuredChunkConcurrency, createStatementTextChunks, mapWithConcurrency } from "./statement-text-chunking.mjs";
 import type { ExtractedPdfPage, StatementExtractionMode, StatementTextChunk } from "./statement-extraction";
@@ -18,7 +18,6 @@ export class StatementProcessingError extends Error {
   constructor(message: string, public readonly status = 502) { super(message); }
 }
 
-const categories = ["Food & Dining", "Housing", "Transport", "Shopping", "Bills & Utilities", "EMI", "Investment", "Health", "Entertainment", "Travel", "Salary", "Income", "Transfers", "Miscellaneous", "Other"] as const;
 const CHUNK_SIZE = 60;
 const MAX_CHUNKS = 24;
 const MINIMUM_ADAPTIVE_RANGE = 8;
@@ -44,7 +43,7 @@ const textStatementChunkSchema = {
   },
 };
 
-const systemPrompt = "You are Finora's bank-statement analyst. Extract transactions faithfully across Indian and international bank formats, card statements, UPI narrations, OCR-scanned PDFs, receipt images and spreadsheets. Never invent a row. Normalize merchant variants while retaining the original narration. Separate Salary, EMI, Investment and person-to-person Transfers from consumption. Confidence is 0..1. Return only the transactions requested from the provided document or independent text section.";
+const systemPrompt = "You are Finora's bank-statement analyst. Extract transactions faithfully across Indian and international bank formats, card statements, UPI narrations, OCR-scanned PDFs, receipt images and spreadsheets. Never invent a row. Normalize merchant variants while retaining the original narration. Separate Salary, EMI, Investment and person-to-person Transfers from consumption. Prefer a specific evidence-supported category; use Miscellaneous only when merchant and purpose signals are genuinely insufficient. Confidence is 0..1. Return only the transactions requested from the provided document or independent text section.";
 
 function mediaFromDataUrl(fileData?: string, fallbackMimeType?: string) {
   if (!fileData) return undefined;
@@ -119,12 +118,13 @@ function canonicalStatement(parsed: Omit<StatementChunk, "transactions" | "total
     const fingerprint = `${row.date}|${row.type}|${amount.toFixed(2)}|${merchant.toLowerCase()}|${narration.toLowerCase()}`;
     const number = (occurrence.get(fingerprint) || 0) + 1;
     occurrence.set(fingerprint, number);
-    return [{
+    const transaction: Transaction = {
       id: `tx-${stableHash(`${fingerprint}|${number}`)}`, date: String(row.date), merchant, description: narration, amount,
       type: row.type === "credit" ? "credit" : "debit", category: row.category,
       confidence: Math.max(0, Math.min(1, Number(row.confidence) || 0)), source: filename,
       explanation: "Categorized from the statement narration.",
-    }];
+    };
+    return [refineTransaction(transaction, { catchAllOnly: true }) as Transaction];
   });
   if (!transactions.length) throw new Error("No transactions could be read from this statement.");
   return {

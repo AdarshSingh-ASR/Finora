@@ -7,7 +7,7 @@ import {
   analyzeFinances, buildFinanceGraph, buildFinancialTimeline, explainBudgetExceeded, explainSpendingChange,
   budgetStatus, categories, compareMonths, detectAnomalies, detectSubscriptions, financialHealthScore,
   financialHealthReport, findCostCutting, findDuplicateTransactions, findSavingsOpportunities,
-  monthlySummaries, money, normalizeMerchant, predictMonthEndSpending, suggestBudgets, summarize, weeklyReport,
+  classifyNarration, monthlySummaries, money, normalizeMerchant, predictMonthEndSpending, refineTransaction, suggestBudgets, summarize, weeklyReport,
 } from "../../../lib/finance";
 import {
   addSpreadsheetTab, appendSpreadsheetRows, clearSpreadsheetRange, connectSpreadsheet, copySpreadsheet, createSpreadsheet,
@@ -109,13 +109,15 @@ export async function POST(request: Request) {
     if (action === "sheet_inspect") return Response.json({ workbook: await inspectSpreadsheet(identity.userId) });
     if (!statement) return Response.json({ error: "Import a statement before using this action.", code: "LEDGER_REQUIRED" }, { status: 409 });
     if (action === "add_transaction") {
-      const category = String(body.category || "Miscellaneous");
       const amount = Number(body.amount);
       const merchant = String(body.merchant || "").trim();
       const date = String(body.date || "").trim();
       const type = body.type === "credit" || body.direction === "credit" ? "credit" : "debit";
+      const description = String(body.description || merchant).trim();
+      const classified = classifyNarration({ merchant, description, type });
+      const category = String(body.category || classified.category);
       if (!merchant || !date || !Number.isFinite(amount) || amount <= 0 || !categories.includes(category as never)) return Response.json({ error: "Provide a valid date, merchant, positive amount, direction, and category.", categories }, { status: 400 });
-      const transaction = { id: crypto.randomUUID(), date, merchant, description: String(body.description || merchant).trim(), amount, type, category: category as typeof transactions[number]["category"], confidence: 1, source: "Finora agent", explanation: "Added and confirmed through the Finora skill." };
+      const transaction = { id: crypto.randomUUID(), date, merchant: body.category ? merchant : classified.merchant, description, amount, type, category: category as typeof transactions[number]["category"], confidence: body.category ? 1 : classified.confidence, source: "Finora agent", explanation: body.category ? "Added and confirmed through the Finora skill." : classified.reason };
       await saveLedger(identity.userId, { ...statement, transactions: [...transactions, transaction] }, budgets);
       return Response.json({ ok: true, transaction });
     }
@@ -128,7 +130,12 @@ export async function POST(request: Request) {
       await saveLedger(identity.userId, { ...statement, transactions: updated }, budgets);
       return Response.json({ ok: true, deleted, transactionCount: updated.length });
     }
-    if (action === "list_transactions" || action === "categorize_transactions") return Response.json({ transactions, count: transactions.length });
+    if (action === "list_transactions") return Response.json({ transactions, count: transactions.length });
+    if (action === "categorize_transactions") {
+      const categorized = transactions.map((item) => refineTransaction(item, { catchAllOnly: false }));
+      if (body.persist === true) await saveLedger(identity.userId, { ...statement, transactions: categorized }, budgets);
+      return Response.json({ transactions: categorized, count: categorized.length, persisted: body.persist === true });
+    }
     if (action === "normalize_merchants") {
       const normalized = transactions.map((item) => ({ ...item, merchant: normalizeMerchant(item.merchant || item.description) }));
       if (body.persist === true) await saveLedger(identity.userId, { ...statement, transactions: normalized }, budgets);

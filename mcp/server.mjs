@@ -5,6 +5,7 @@ import { z } from "zod";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { configuredProviders, generateWithFallback } from "../lib/ai-providers.mjs";
+import { categoryValues, classifyNarration, normalizeMerchantName, refineTransaction } from "../lib/transaction-classifier.mjs";
 import {
   analyzeFinances,
   buildFinanceGraph,
@@ -20,32 +21,12 @@ import {
 
 const DATA_DIR = path.resolve(process.env.FINORA_DATA_DIR || ".finora");
 const LEDGER_PATH = path.join(DATA_DIR, "ledger.json");
-const categories = ["Food & Dining", "Housing", "Transport", "Shopping", "Bills & Utilities", "EMI", "Investment", "Health", "Entertainment", "Travel", "Salary", "Income", "Transfers", "Miscellaneous", "Other"];
+const categories = categoryValues;
 const transactionInput = z.object({ id: z.string().optional(), date: z.string(), merchant: z.string().optional(), description: z.string(), amount: z.number(), type: z.enum(["debit", "credit"]), category: z.string().optional(), confidence: z.number().optional(), source: z.string().optional(), explanation: z.string().optional() }).passthrough();
 const budgetInput = z.object({ category: z.string(), limit: z.number().positive() });
 
 function normalizeMerchant(raw = "") {
-  const value = raw.toUpperCase().replace(/\b(UPI|P2M|P2P|POS|ACH|SI|BBPS|NEFT|IMPS|TXN|REF)\b/g, " ").replace(/\b\d{6,}\b/g, " ").replace(/[\/_*\-]+/g, " ").replace(/\s+/g, " ").trim();
-  const known = [[/AMZN|AMAZON/, "Amazon"], [/SWIGGY/, "Swiggy"], [/ZOMATO/, "Zomato"], [/BLINKIT|GROFERS/, "Blinkit"], [/UBER/, "Uber"], [/NETFLIX/, "Netflix"], [/SPOTIFY/, "Spotify"], [/OPENAI|CHATGPT/, "ChatGPT"], [/ANTHROPIC|CLAUDE/, "Claude"], [/GOOGLE ONE/, "Google One"], [/CULT|CUREFIT/, "Cult.fit"], [/PRIME/, "Amazon Prime"], [/CANVA/, "Canva"], [/MYNTRA/, "Myntra"], [/INDIGO/, "IndiGo"], [/RELIANCE JIO|\bJIO\b/, "Jio"], [/BESCOM/, "BESCOM"], [/BLUE TOKAI/, "Blue Tokai"]];
-  const match = known.find(([pattern]) => pattern.test(value));
-  return match?.[1] || value.split(" ").filter(Boolean).slice(0, 4).map((part) => part[0] + part.slice(1).toLowerCase()).join(" ") || "Unknown merchant";
-}
-
-function categoryFor(description, credit = false) {
-  if (credit) return /salary|payroll/i.test(description) ? "Salary" : "Income";
-  const s = description.toLowerCase();
-  if (/emi|loan repayment|bajaj finance|home loan|car loan/.test(s)) return "EMI";
-  if (/sip|mutual fund|index fund|zerodha|groww|investment/.test(s)) return "Investment";
-  if (/swiggy|zomato|blinkit|zepto|restaurant|cafe|coffee|food|grocery/.test(s)) return "Food & Dining";
-  if (/rent|housing|maintenance/.test(s)) return "Housing";
-  if (/uber|ola|rapido|metro|fuel|petrol|irctc/.test(s)) return "Transport";
-  if (/amazon|flipkart|myntra|ajio|retail/.test(s)) return "Shopping";
-  if (/electric|bescom|airtel|jio|broadband|water|gas|bbps/.test(s)) return "Bills & Utilities";
-  if (/hospital|pharmacy|medical|cult|gym|health/.test(s)) return "Health";
-  if (/netflix|spotify|cinema|bookmyshow|hotstar|prime|canva|chatgpt|claude/.test(s)) return "Entertainment";
-  if (/airline|indigo|hotel|makemytrip|booking/.test(s)) return "Travel";
-  if (/transfer|imps|p2p/.test(s)) return "Transfers";
-  return "Miscellaneous";
+  return normalizeMerchantName(raw);
 }
 
 const periodKey = (date) => { const parsed = new Date(date); return Number.isNaN(parsed.getTime()) ? String(date).slice(0, 7) : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`; };
@@ -91,11 +72,12 @@ async function extractDocument(filePath) {
 }
 async function parseFile(filePath) { const resolved = path.resolve(filePath), extension = path.extname(resolved).toLowerCase(); return [".csv", ".tsv", ".txt"].includes(extension) ? parseCsv(await fs.readFile(resolved, "utf8"), path.basename(resolved)) : extractDocument(resolved); }
 async function categorize(transactions) {
-  const local = () => transactions.map((t) => ({ ...t, id: t.id || `txn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, merchant: normalizeMerchant(t.merchant || t.description), category: categoryFor(t.description, t.type === "credit"), confidence: .74, source: t.source || "import", explanation: "Categorized locally from merchant and narration signals." }));
+  const local = () => transactions.map((t) => { const classified = classifyNarration(t); return ({ ...t, id: t.id || `txn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, merchant: classified.merchant, category: classified.category, confidence: classified.confidence, source: t.source || "import", explanation: classified.reason }); });
   if (!configuredProviders().vertex && !configuredProviders().groq) return local();
   try {
     const result = await generateWithFallback({ system: `Normalize merchants and categorize transactions into: ${categories.join(", ")}. Separate P2P Transfers, EMI and Investment from consumption. Preserve every transaction and id; add confidence and a short explanation.`, prompt: JSON.stringify(transactions), schema: categorizedStatementSchema });
-    return JSON.parse(result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")).transactions || local();
+    const generated = JSON.parse(result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")).transactions || local();
+    return generated.map((transaction) => refineTransaction(transaction, { catchAllOnly: true }));
   } catch { return local(); }
 }
 

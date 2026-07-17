@@ -34,7 +34,8 @@ Pass simple payloads as cross-platform `key=value` arguments, for example `call 
 | `answer_finance_question` | `question`, optional `history` | Natural-language answer grounded in the ledger |
 | `sheet_status` | none | Connected spreadsheet and staleness |
 | `sheet_inspect` | none | Workbook title, tabs, dimensions, chart counts, and bounded sample rows |
-| `list_transactions` / `categorize_transactions` | none | Canonical categorized ledger rows |
+| `list_transactions` | none | Canonical saved ledger rows |
+| `categorize_transactions` | optional `persist=true` | Reclassifies rows with merchant-aware, evidence-backed categories; persists only when explicitly requested |
 
 ## Write actions
 
