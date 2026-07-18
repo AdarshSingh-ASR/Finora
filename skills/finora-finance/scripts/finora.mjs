@@ -5,10 +5,13 @@ import { basename, extname, join, resolve } from "node:path";
 
 const configDir = process.env.FINORA_CONFIG_DIR || join(homedir(), ".finora");
 const configPath = join(configDir, "agent-skill.json");
+const defaultBaseUrl = process.env.FINORA_API_URL || "https://finora.finora-asr.workers.dev";
 
 async function readConfig() {
-  try { return JSON.parse(await readFile(configPath, "utf8")); }
-  catch { return { baseUrl: process.env.FINORA_API_URL || "http://localhost:3001" }; }
+  try {
+    const config = JSON.parse((await readFile(configPath, "utf8")).replace(/^\uFEFF/, ""));
+    return { ...config, baseUrl: config.baseUrl || defaultBaseUrl };
+  } catch { return { baseUrl: defaultBaseUrl }; }
 }
 async function saveConfig(config) {
   await mkdir(configDir, { recursive: true });
@@ -27,10 +30,15 @@ async function parsePayload(parts) {
   return JSON.parse(parts.join(" "));
 }
 async function request(path, config, init = {}) {
-  const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(config.accessToken ? { Authorization: `Bearer ${config.accessToken}` } : {}), ...init.headers },
-  });
+  let response;
+  try {
+    response = await fetch(`${config.baseUrl.replace(/\/$/, "")}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(config.accessToken ? { Authorization: `Bearer ${config.accessToken}` } : {}), ...init.headers },
+    });
+  } catch {
+    throw new Error(`Finora could not reach ${config.baseUrl}. Check your internet connection or run configure with another Finora deployment URL.`);
+  }
   const text = await response.text();
   let result; try { result = text ? JSON.parse(text) : {}; } catch { result = { error: text || `HTTP ${response.status}` }; }
   return { response, result };

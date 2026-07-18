@@ -8,8 +8,9 @@ import {
 } from "lucide-react";
 
 const serverUrl = "https://finora.finora-asr.workers.dev";
-const installCommand = `node ./finora-finance/scripts/install.mjs ${serverUrl}`;
-const githubCommands = `git clone --depth 1 https://github.com/AdarshSingh-ASR/Finora.git\nnode ./Finora/skills/finora-finance/scripts/install.mjs ${serverUrl}`;
+const installCommand = "npx skills add AdarshSingh-ASR/Finora --skill finora-finance --global --yes";
+const zipInstallCommand = "node ./finora-finance/scripts/install.mjs";
+const githubCommands = "git clone --depth 1 https://github.com/AdarshSingh-ASR/Finora.git\nnode ./Finora/skills/finora-finance/scripts/install.mjs";
 
 function FinoraMark() {
   return <span className="beige-mark" aria-hidden="true">F</span>;
@@ -47,26 +48,26 @@ export default function InstallSkillPage() {
         <div>
           <p>FINORA FINANCE SKILL · AGENT READY</p>
           <h1>Your money memory,<br/><em>inside your agent.</em></h1>
-          <span>The download has started. Install once, connect with Google on first use, and ask Finora naturally from Codex, Claude, or another compatible agent.</span>
+          <span>Install globally with one command, connect with Google on first use, and ask Finora naturally from Codex, Claude, or another compatible agent. The live backend is configured automatically.</span>
         </div>
         <a className="skill-download-button" href="/downloads/finora-finance.zip" download>
-          <Download size={17}/> Download again
+          <Download size={17}/> Download ZIP instead
         </a>
       </header>
 
       <section className="skill-install-grid" aria-labelledby="install-heading">
         <div className="skill-install-main">
           <div className="skill-section-label"><span>01</span><p id="install-heading">INSTALL THE SKILL</p></div>
-          <h2>Three small steps.<br/><em>No API keys to paste.</em></h2>
+          <h2>One global install.<br/><em>No server URL to paste.</em></h2>
 
           <ol className="skill-steps">
             <li>
               <span>01</span>
-              <div><h3>Extract the download</h3><p>Unzip <code>finora-finance.zip</code>. Keep the extracted <code>finora-finance</code> folder together.</p></div>
+              <div><h3>Install globally</h3><p>Run this from any terminal. The Skills CLI discovers Finora and installs it at user level for your supported agent.</p><CommandBlock value={installCommand} label="Global install command"/></div>
             </li>
             <li>
               <span>02</span>
-              <div><h3>Run the universal installer</h3><p>Open a terminal in the folder containing <code>finora-finance</code>, then run:</p><CommandBlock value={installCommand} label="Terminal command"/></div>
+              <div><h3>Restart your agent</h3><p>Restart Codex, Claude, or your compatible agent so it discovers the newly installed global skill.</p></div>
             </li>
             <li>
               <span>03</span>
@@ -92,7 +93,7 @@ export default function InstallSkillPage() {
           <div className="skill-github-card">
             <span><GitBranch size={19}/> INSTALL FROM GITHUB</span>
             <h3>Prefer the source?</h3>
-            <p>Clone the public repository and run the same installer directly from the checked-out skill.</p>
+            <p>Clone the public repository and run the bundled installer. ZIP users can extract the folder and run <code>{zipInstallCommand}</code>.</p>
             <CommandBlock value={githubCommands} label="GitHub installation"/>
             <a href="https://github.com/AdarshSingh-ASR/Finora/tree/main/skills/finora-finance" target="_blank" rel="noreferrer">View skill on GitHub <ExternalLink size={14}/></a>
           </div>

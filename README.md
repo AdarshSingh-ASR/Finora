@@ -206,8 +206,10 @@ codex mcp add finora -- node mcp/server.mjs
 The [`finora-finance`](./skills/finora-finance) skill connects an agent to the user's cloud Finora account. On first use it returns a short-lived browser link. Google sign-in happens on Finora's domain; the skill receives a revocable Finora token, never the user's Google credentials.
 
 ```bash
-node skills/finora-finance/scripts/install.mjs https://finora.finora-asr.workers.dev
+npx skills add AdarshSingh-ASR/Finora --skill finora-finance --global --yes
 ```
+
+This installs Finora at user level and uses the production service automatically. The downloadable ZIP remains available; after extraction, run `node finora-finance/scripts/install.mjs`. Pass a URL only when using a self-hosted Finora deployment.
 
 Invoke it in Codex:
 

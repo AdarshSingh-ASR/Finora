@@ -25,8 +25,8 @@ test("build contains the Finora product experience", async () => {
   assert.match(dashboard, /Create Finora Financial Dashboard/); assert.match(dashboard, /Open Sheet/); assert.match(dashboard, /Disconnect from Finora/);
   assert.doesNotMatch(dashboard, /Apps Script web app URL|Matches FINORA_SECRET/);
   assert.match(landing, /Every statement/); assert.match(landing, /The MCP is/); assert.match(landing, /Raw files are never kept/);
-  assert.match(landing, /finora-finance\.zip/); assert.match(landing, /window\.location\.href = "\/install"/);
-  assert.match(install, /Three small steps/); assert.match(install, /INSTALL FROM GITHUB/); assert.match(install, /\$finora-finance skill-sync/); assert.match(install, /\/finance skill-sync/);
+  assert.match(install, /finora-finance\.zip/); assert.match(landing, /window\.location\.href = "\/install"/);
+  assert.match(install, /One global install/); assert.match(install, /npx skills add AdarshSingh-ASR\/Finora --skill finora-finance --global --yes/); assert.match(install, /INSTALL FROM GITHUB/); assert.match(install, /\$finora-finance skill-sync/); assert.match(install, /\/finance skill-sync/);
   assert.ok((await stat(new URL("../public/downloads/finora-finance.zip", import.meta.url))).size > 1_000, "missing packaged Finora skill");
   assert.match(dashboard, /No sample transactions\. Your dashboard starts empty\./);
   assert.match(dashboard, /AnalystReport/); assert.match(dashboard, /What Finora noticed/); assert.match(dashboard, /VISUAL BREAKDOWN/);

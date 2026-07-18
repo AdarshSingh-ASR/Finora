@@ -17,7 +17,7 @@ node <skill-directory>/scripts/finora.mjs skill-sync
 
 If it returns `authentication_required`, show the verification URL to the user as a clickable link and tell them to approve it with Google. Never paste or display the device code, access token, or contents of the credentials file. After the user says approval is complete, run `skill-sync` again. The script stores the account token locally and requests authentication again only after expiry, revocation, or an explicit logout.
 
-If no server is configured, run `node <skill-directory>/scripts/finora.mjs configure https://YOUR-FINORA-DOMAIN` using the deployment URL supplied by the user or installer. For local development the default is `http://localhost:3001`.
+The bundled client defaults to Finora's production service at `https://finora.finora-asr.workers.dev`, so a global Skills CLI install works without manual server configuration. To use another deployment or local development, run `node <skill-directory>/scripts/finora.mjs configure https://YOUR-FINORA-DOMAIN` before `skill-sync`.
 
 ## Route requests
 

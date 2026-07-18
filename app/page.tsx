@@ -49,15 +49,7 @@ export default function LandingPage() {
     else void signIn.social({ provider: "google", callbackURL: "/dashboard" });
   };
 
-  const downloadSkill = () => {
-    const link = document.createElement("a");
-    link.href = "/downloads/finora-finance.zip";
-    link.download = "finora-finance.zip";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => { window.location.href = "/install"; }, 450);
-  };
+  const downloadSkill = () => { window.location.href = "/install"; };
 
   return (
     <main className="finora-landing" id="top">

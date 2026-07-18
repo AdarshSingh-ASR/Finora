@@ -1,12 +1,14 @@
 # Installation
 
-Run from the downloaded skill directory:
+Install globally for supported agents with the Skills CLI:
 
 ```bash
-node scripts/install.mjs https://your-finora-domain.example
+npx skills add AdarshSingh-ASR/Finora --skill finora-finance --global --yes
 ```
 
-This installs the package in `~/.codex/skills/finora-finance` for Codex, mirrors it to `~/.agents/skills/finora-finance` for other Agent Skills-compatible clients, and installs the Claude command alias at `~/.claude/commands/finance.md`. Restart the agent if it does not discover the new skill immediately.
+The client is preconfigured for `https://finora.finora-asr.workers.dev`. Restart the agent if it does not discover the new skill immediately.
+
+For the downloaded ZIP, extract it and run `node scripts/install.mjs`. The fallback installer writes the production endpoint and copies the package to `~/.codex/skills/finora-finance`, `~/.agents/skills/finora-finance`, and the Claude command directory. Pass another server URL only for a self-hosted deployment.
 
 Invocation:
 

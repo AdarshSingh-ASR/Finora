@@ -18,14 +18,11 @@ if (resolve(codexTarget) !== skillRoot) await cp(skillRoot, codexTarget, { recur
 await mkdir(claudeCommands, { recursive: true });
 await writeFile(join(claudeCommands, "finance.md"), await readFile(join(skillRoot, "commands", "finance.md"), "utf8"));
 
-const baseUrl = process.argv[2];
-if (baseUrl) {
-  const checked = new URL(baseUrl).origin;
-  const configDir = process.env.FINORA_CONFIG_DIR || join(homedir(), ".finora");
-  let existing = {};
-  try { existing = JSON.parse((await readFile(join(configDir, "agent-skill.json"), "utf8")).replace(/^\uFEFF/, "")); } catch {}
-  await mkdir(configDir, { recursive: true });
-  await writeFile(join(configDir, "agent-skill.json"), `${JSON.stringify({ ...existing, baseUrl: checked }, null, 2)}\n`, { mode: 0o600 });
-}
+const baseUrl = new URL(process.argv[2] || process.env.FINORA_API_URL || "https://finora.finora-asr.workers.dev").origin;
+const configDir = process.env.FINORA_CONFIG_DIR || join(homedir(), ".finora");
+let existing = {};
+try { existing = JSON.parse((await readFile(join(configDir, "agent-skill.json"), "utf8")).replace(/^\uFEFF/, "")); } catch {}
+await mkdir(configDir, { recursive: true });
+await writeFile(join(configDir, "agent-skill.json"), `${JSON.stringify({ ...existing, baseUrl }, null, 2)}\n`, { mode: 0o600 });
 
-process.stdout.write(`Installed Finora Finance skill:\n- Codex: ${codexTarget}\n- Agent Skills: ${agentTarget}\n- Claude command: ${join(claudeCommands, "finance.md")}\n${baseUrl ? `- Server: ${new URL(baseUrl).origin}\n` : ""}`);
+process.stdout.write(`Installed Finora Finance skill:\n- Codex: ${codexTarget}\n- Agent Skills: ${agentTarget}\n- Claude command: ${join(claudeCommands, "finance.md")}\n- Server: ${baseUrl}\n`);
