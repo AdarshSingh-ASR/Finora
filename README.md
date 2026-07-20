@@ -14,6 +14,10 @@ Turn bank, credit-card, and UPI statements into a clean financial memory that wo
 
 [Live app](https://finora.finora-asr.workers.dev) · [Demo](#demo) · [How it works](#how-it-works) · [Run locally](#run-locally) · [MCP and Skill](#mcp-server-and-agent-skill)
 
+![Finora payment flow: UPI alerts become an AI-generated spending report](./docs/finora-payment-flow.svg)
+
+*A living product illustration: payment notifications enter Finora, get normalized and explained, and emerge as a useful spending report.*
+
 </div>
 
 ![Finora - statement in, money story out](./public/og-v2.png)
