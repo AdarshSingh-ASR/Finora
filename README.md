@@ -12,6 +12,8 @@ Finora turns scattered bank, credit-card, and UPI statements into one explainabl
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-installable-3b82f6?style=flat-square)](./skills/finora-finance)
 [![Live](https://img.shields.io/badge/Live-Cloudflare_Workers-16b88b?style=flat-square)](https://finora.finora-asr.workers.dev)
 
+**[Watch the demo](https://youtu.be/WCk_ttHqd4Q)**
+
 **[Open the live app](https://finora.finora-asr.workers.dev)** · **[Verify without credentials](#credential-free-verification)** · [How it works](#how-it-works) · [Run locally](#run-locally) · [MCP and Skill](#mcp-server-and-agent-skill)
 
 ![Finora - statement in, money story out](./public/og-v2.png)
@@ -21,6 +23,12 @@ Finora turns scattered bank, credit-card, and UPI statements into one explainabl
 *A living product illustration: payment notifications enter Finora, get normalized and explained, and emerge as a useful spending report.*
 
 </div>
+
+## Demo video
+
+[![Watch the Finora demo](https://img.youtube.com/vi/WCk_ttHqd4Q/maxresdefault.jpg)](https://youtu.be/WCk_ttHqd4Q)
+
+Watch the [Finora product demo on YouTube](https://youtu.be/WCk_ttHqd4Q) for a concise walkthrough of statement import, financial analysis, Ask Finora, Google Sheets sync, and the agent experience.
 
 ## Product screenshots
 
