@@ -22,7 +22,30 @@ Finora turns scattered bank, credit-card, and UPI statements into one explainabl
 
 </div>
 
+## Product screenshots
 
+<table>
+  <tr>
+    <td width="50%">
+      <img src="./docs/dashboard%20overview.png" alt="Finora overview dashboard with spending, income, cash flow, and transaction insights" />
+      <br /><strong>Money overview</strong><br />A unified view of spending, cash flow, trends, and recent transactions.
+    </td>
+    <td width="50%">
+      <img src="./docs/ask%20finora.png" alt="Ask Finora answering a natural-language finance question with an analyst brief" />
+      <br /><strong>Ask Finora</strong><br />Grounded answers with visual breakdowns generated from the imported ledger.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="./docs/financial%20timeline.png" alt="Finora financial timeline showing meaningful month-by-month changes" />
+      <br /><strong>Financial timeline</strong><br />Evidence-linked changes reveal how the user's money story evolves month by month.
+    </td>
+    <td width="50%">
+      <img src="./docs/mcp%20skills.png" alt="Finora agent surface showing composable finance capabilities" />
+      <br /><strong>Agent-ready finance</strong><br />Composable capabilities make the same financial intelligence available to compatible agents.
+    </td>
+  </tr>
+</table>
 
 ## Judge it in two minutes
 
