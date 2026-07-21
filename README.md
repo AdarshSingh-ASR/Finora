@@ -34,11 +34,11 @@ No private financial data or AI credential is required for the core verification
 
 ## Why I built Finora
 
-Every month-end, my siblings, my friends, and I face the same chore: expenses are scattered across UPI histories, bank statements, and card statements, and we manually combine them in Excel before we can answer basic questions about where our money went. The formats disagree, merchant names are noisy, transfers look like spending, and next month the cleanup starts again.
+I make close to 100 UPI, bank, and card payments in a typical week. By the end of the month, I often find myself looking at my balance and wondering, "Where did my salary go?" The answer is usually scattered across UPI histories, bank statements, and credit-card statements, all using different formats and messy transaction descriptions.
 
-That recurring problem inspired a web app that goes beyond an ordinary expense tracker. Finora starts with the statements people already have, creates a reviewable financial ledger, and makes the same corrected truth usable in a dashboard, Google Sheets, and agents.
+Trying to combine everything in Excel, clean merchant names, separate transfers from actual spending, and categorize every payment became a repetitive monthly chore. That personal frustration inspired me to build Finora, a web app that goes beyond an ordinary expense tracker. It starts with the statements I already have and turns them into a clean, reviewable financial ledger with useful insights, reports, and natural-language answers.
 
-I use Codex extensively in my own work, so the product could not stop at a web UI. I also built an installable finance skill and a composable MCP surface, allowing an agent to import, inspect, explain, and act on the ledger through focused operations rather than a single opaque automation.
+GPT-5.6 and Codex played a major role in building Finora. GPT-5.6 helped me think through the product and architecture, while Codex helped turn those decisions into a working application across the interface, finance engine, Google Sheets integration, and agent experience. With their help, Finora grew from a solution to my own monthly confusion into a financial companion that can help anyone understand where their money actually goes.
 
 ## What Finora is
 
