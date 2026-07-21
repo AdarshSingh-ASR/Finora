@@ -2,9 +2,9 @@
 
 # Finora
 
-### Every statement tells one money story.
+### Your statements become a finance system that both you and your agents can use.
 
-Turn bank, credit-card, and UPI statements into a clean financial memory that works in a dashboard, Google Sheets, Codex, Claude, and other MCP-compatible agents.
+Finora turns scattered bank, credit-card, and UPI statements into one explainable ledger, then exposes that ledger through a polished web app, reconciled Google Sheets, 35 composable MCP tools, and an installable finance skill for Codex and other compatible agents.
 
 [![OpenAI Build Week](https://img.shields.io/badge/OpenAI_Build_Week-Apps_for_Your_Life-111111?style=flat-square)](https://openai.devpost.com/)
 [![Node.js](https://img.shields.io/badge/Node.js-22.13%2B-247a55?style=flat-square)](https://nodejs.org/)
@@ -12,7 +12,7 @@ Turn bank, credit-card, and UPI statements into a clean financial memory that wo
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-installable-3b82f6?style=flat-square)](./skills/finora-finance)
 [![Live](https://img.shields.io/badge/Live-Cloudflare_Workers-16b88b?style=flat-square)](https://finora.finora-asr.workers.dev)
 
-[Live app](https://finora.finora-asr.workers.dev) · [Demo](#demo) · [How it works](#how-it-works) · [Run locally](#run-locally) · [MCP and Skill](#mcp-server-and-agent-skill)
+**[Open the live app](https://finora.finora-asr.workers.dev)** · **[Verify without credentials](#credential-free-verification)** · [How it works](#how-it-works) · [Run locally](#run-locally) · [MCP and Skill](#mcp-server-and-agent-skill)
 
 ![Finora payment flow: UPI alerts become an AI-generated spending report](./docs/finora-payment-flow.svg)
 
@@ -22,13 +22,23 @@ Turn bank, credit-card, and UPI statements into a clean financial memory that wo
 
 ![Finora - statement in, money story out](./public/og-v2.png)
 
-## Why we built Finora
+## Judge it in two minutes
 
-Every month, people receive a bank statement. Most of us glance at the balance, notice a few large payments, and close it. The useful details - where the money went, which subscription renewed, whether a merchant charged twice, or how this month compares with the last - stay buried in rows of inconsistent transaction text.
+No private financial data or AI credential is required for the core verification path.
 
-Getting those answers usually means cleaning a spreadsheet, categorizing every payment, and rebuilding the same report again next month. We built Finora because understanding your own money should not require that much maintenance.
+1. **Open the [live app](https://finora.finora-asr.workers.dev)** to inspect the shipped product and its statement-first workflow.
+2. **Inspect the committed, redacted [`samples/upi-statement.csv`](./samples/upi-statement.csv)** to see the exact input used by the deterministic parser tests.
+3. **Run `npm install && npm test`** to build the Cloudflare target and verify finance rules, provider fallback behavior, MCP composition, large-statement chunking, skill installation, rendered HTML, and incremental Sheets reconciliation.
+4. **Run `npm run mcp:inspect`** and call `parse_statement` with the absolute sample path, then pass the rows to `categorize_transactions` and `summarize_transactions`. These read-only steps need no AI key and do not save a ledger or modify a Sheet.
+5. **Inspect the agent surfaces:** [`mcp/server.mjs`](./mcp/server.mjs) contains 35 composable tools, while [`skills/finora-finance`](./skills/finora-finance) is the installable authenticated skill backed by the production service.
 
-Finora starts with the statement you already have and turns it into a ledger you can inspect, correct, question, and use anywhere.
+## Why I built Finora
+
+Every month-end, my siblings, my friends, and I face the same chore: expenses are scattered across UPI histories, bank statements, and card statements, and we manually combine them in Excel before we can answer basic questions about where our money went. The formats disagree, merchant names are noisy, transfers look like spending, and next month the cleanup starts again.
+
+That recurring problem inspired a web app that goes beyond an ordinary expense tracker. Finora starts with the statements people already have, creates a reviewable financial ledger, and makes the same corrected truth usable in a dashboard, Google Sheets, and agents.
+
+I use Codex extensively in my own work, so the product could not stop at a web UI. I also built an installable finance skill and a composable MCP surface, allowing an agent to import, inspect, explain, and act on the ledger through focused operations rather than a single opaque automation.
 
 ## What Finora is
 
@@ -148,13 +158,15 @@ flowchart TB
 
 ## How GPT-5.6 and Codex shaped Finora
 
-We did not use Codex as a one-shot code generator. It was the shared workspace in which we designed, implemented, inspected, tested, and shipped Finora. Our loop looked like this:
+Planning with GPT-5.6 and the first substantial Codex implementation pass produced roughly 80% of Finora's initial foundation. That was a starting point, not the finished submission. The final product required repeated testing, corrections to financial rules, large-file pipeline work, security hardening, identity-based Sheets reconciliation, UI refinement, and verification of agent actions.
 
-1. we described a product problem or shared a screenshot of a broken flow;
-2. GPT-5.6 helped us challenge the product and architecture choices;
+I did not treat Codex as a one-shot code generator. It became the shared workspace in which I designed, implemented, inspected, tested, and shipped Finora. The loop looked like this:
+
+1. I described a product problem or shared a screenshot of a broken flow;
+2. GPT-5.6 helped me challenge the product and architecture choices;
 3. Codex inspected the actual repository, implemented the change across the affected layers, and ran the app;
-4. we reviewed the real result, gave concrete feedback, and repeated the loop;
-5. Codex ran builds, tests, MCP audits, and live deployment checks before we accepted the change.
+4. I reviewed the real result, gave concrete feedback, and repeated the loop;
+5. Codex ran builds, tests, MCP audits, and live deployment checks before I accepted the change.
 
 That continuity mattered. A change such as "sync only new transactions" was not treated as a UI tweak: Codex traced it through transaction identity, D1 persistence, Sheets reconciliation, tests, and the agent action that triggers the sync.
 
@@ -330,7 +342,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000), sign in with a configured Google test account, and upload [`samples/upi-statement.csv`](./samples/upi-statement.csv). The dashboard starts empty and populates only from transactions Finora actually finds.
 
-## Sample data and credential-free verification
+## Credential-free verification
 
 [`samples/upi-statement.csv`](./samples/upi-statement.csv) is a small, redacted UPI-style statement committed for local testing and hackathon review. It exercises merchant cleanup, debit/credit direction, category separation, and the no-AI CSV parser. It contains no real account identifiers.
 
@@ -390,31 +402,6 @@ npx vinext deploy
 
 After deployment, verify the printed Worker URL, Google sign-in, one sample import, Ask Finora, and a Sheet sync using a test account.
 
-## Demo
-
-> **Live demo:** [https://finora.finora-asr.workers.dev](https://finora.finora-asr.workers.dev)
-
-> **Demo video:** add the public YouTube link here. The final video should stay under three minutes, show the working product, and explain where GPT-5.6 and Codex changed the outcome.
-
-Suggested judge walkthrough:
-
-1. Upload the redacted sample statement.
-2. Show merchant cleanup, categories, confidence, and transfer separation.
-3. Open subscriptions, duplicates, anomalies, and a month comparison.
-4. Ask one concise factual question and one richer analytical question to demonstrate modular responses.
-5. Sync the ledger to Google Sheets and open the generated charts.
-6. Run `$finora-finance skill-sync` in Codex and ask for the same result through the skill.
-7. Import another statement and resync Sheets to demonstrate identity-based incremental reconciliation.
-
-### Screenshots and GIFs
-
-The repository includes the social preview above. Add the final production captures under `public/demo/` before submission:
-
-- `[Landing page GIF - statement to ledger to report]`
-- `[Dashboard screenshot - overview and trends]`
-- `[Ask Finora screenshot - natural-language analysis]`
-- `[Google Sheets screenshot - generated tabs and charts]`
-- `[Codex screenshot - Finora skill in use]`
 
 ## Project structure
 
@@ -450,7 +437,7 @@ Finora/
 - Confidence and explanations remain visible so uncertain classifications can be reviewed.
 - Finora provides factual ledger analysis, not investment, tax, legal, or credit advice.
 
-## Future improvements
+## Limitations and future work
 
 - password-protected statement PDFs;
 - page-level OCR review and manual rescue for genuinely unreadable scans;
